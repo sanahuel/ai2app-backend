@@ -3,15 +3,15 @@ from django.http import JsonResponse
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from django.views import View
-from .models import Ensayo 
-from .serializers import EnsayoSerializer, createEnsayoSerializer
+# from .models import Ensayo 
+# from .serializers import EnsayoSerializer, createEnsayoSerializer
 
 # Create your views here.
-'''
+
 @api_view(['GET'])
 def getRoutes(request):
     return Response('Prueba API')
-
+'''
 @api_view(['GET'])
 def getEnsayos(request):
     ensayos = Ensayo.objects.all()
@@ -32,10 +32,10 @@ def createEnsayo(request):
 '''
 
 class NewView(View):
-    def get():
+    def get(self, request, *args, **kwargs):
         pass
 
-    def post():
+    def post(self, request, *args, **kwargs):
         pass
 
 class ControlView(View):
