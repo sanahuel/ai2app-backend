@@ -18,25 +18,7 @@ from .serializers import CreateEnsayoSerializer
 @api_view(['GET'])
 def getRoutes(request):
     return Response('Prueba API')
-'''
-@api_view(['GET'])
-def getEnsayos(request):
-    ensayos = Ensayo.objects.all()
-    serializer = EnsayoSerializer(ensayos, many=True)
-    return Response(serializer.data)
 
-@api_view(['POST'])
-def createEnsayo(request):
-    data = request.data
-    ensayo = Ensayo.objects.create(
-        nombre = data['nombre'],
-        inicio = data['inicio'],
-        fin = data['fin'],
-        horas = data['horas']
-    )
-    serializaer = createEnsayoSerializer(ensayo, many=False)
-    return Response(serializaer.data)
-'''
 #       ------Nuevo Ensayo------
 
 class NewView(APIView):
@@ -137,7 +119,6 @@ class ControlView(View):
 
 class ControlExpView(View):
     def get(self, request,  *args, **kwargs):
-        print(self.kwargs['pk'])
         experimento = Experimentos.objects.get(idExperimentos= self.kwargs['pk'])
         
         #info
@@ -180,8 +161,13 @@ class ControlExpView(View):
         return JsonResponse(data)
 
     def put(self, request, *args, **kwargs):
-        table = request.POST.get('table')
-        id = request.POST.get('id')
+        json_data = json.loads(request.body)
+
+        table = json_data['table']
+        id = json_data['id']
+
+        print(f'{table}')
+        print(id)
         if table == 'Placas':
             try:
                 with transaction.atomic():
@@ -192,10 +178,10 @@ class ControlExpView(View):
             except Placas.DoesNotExist:
                 return JsonResponse({'status': 'error', 'message': 'Placa not found'})
         
-        elif table == 'Condicion':
+        elif table == 'Condiciones':
             try:
                 with transaction.atomic():
-                    placas = Condiciones.objects.filter(idCondiciones=id, idExperimentos=self.kwargs['pk']).values_list('idPlacas', flat=True)
+                    placas = Placas.objects.filter(idCondiciones=id, idExperimentos=self.kwargs['pk']).values_list('idPlacas', flat=True)
                     for idPlaca in placas:
                         placa = Placas.objects.get(idPlacas=idPlaca, idExperimentos=self.kwargs['pk'])
                         placa.cancelada = True
@@ -207,17 +193,20 @@ class ControlExpView(View):
         elif table == 'Tareas':
             try:
                 with transaction.atomic():
-                    tarea = Tareas.objects.get(idTareas=id, idExperimentos=self.kwargs['pk'])
+                    # 2023-03-03T08:30:00.000Z -> 2023-03-03 08:30:00.000
+                    tarea = Tareas.objects.get(fechayHora=id[:-1].replace('T',' '), idExperimentos=self.kwargs['pk'])
                     tarea.cancelada = True
                     tarea.save()
                     return JsonResponse({'message': 'Tarea cancelada'})
             except Tareas.DoesNotExist:
                 return JsonResponse({'status': 'error', 'message': 'Tarea not found'})
         
+        return JsonResponse({'message': 'table not found'})
 
     def delete(self, request, *args, **kwargs):
         try:
-            Experimentos.objects.filter(idExperimentos=self.kwargs['pk']).delete()
+            experimento = Experimentos.objects.get(idExperimentos=self.kwargs['pk'])
+            experimento.delete()
         except Experimentos.DoesNotExist:
             return JsonResponse({'status': 'error', 'message': 'Experimento not found'})
         
