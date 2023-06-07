@@ -1,6 +1,9 @@
 import datetime
+import threading
 import json
 import pytz
+import time
+import random
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.db import transaction
@@ -15,23 +18,56 @@ from .serializers import CreateEnsayoSerializer
 
 # Create your views here.
 
-@api_view(['GET'])
-def getRoutes(request):
-    return Response('Prueba API')
+timeout_seconds = 30
+
+code = None
 
 #       ------Nuevo Ensayo------
 
 class NewView(APIView):
     serializer_class = CreateEnsayoSerializer
+    lock = threading.Lock()
+    def __init__(self, *args, **kwargs):
+        self.code = None
+    
+    def acquire_lock(self):
+        self.lock.acquire() # ////////////////////////////////// TODO Poner Timeout de seguridad
+        # self.reset_timer()
+        print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! lock acquired !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 
+    def reset_timer(self):
+        # if self.timer != None:
+        #     self.timer.cancel()
+        # self.timer = None
+        # self.timer = threading.Timer(timeout_seconds, self.release_lock)
+        # self.timer.start()
+        print('timer reset')
+
+    def release_lock(self):
+        if self.lock.locked():
+            self.lock.release()
+            print('/////////////////////////////////////////// lock released ///////////////////////////////////////////')
+    
     def get(self, request, *args, **kwargs):
         serializer = self.serializer_class
-        capturas = list(Tareas.objects.values_list('fechayHora', flat=True))
-        return JsonResponse({'capturas': capturas})
+        if self.lock.locked():
+            return JsonResponse({'status': 'repeat'})
+        else:
+            self.acquire_lock()
+            capturas = list(Tareas.objects.values_list('fechayHora', flat=True))
+            global code
+            code = random.randint(1, 999999999999999)
+            return JsonResponse({'capturas': capturas, 'num': code})
+    
+    def put(self, request, *args, **kwargs):
+        if "release" in request.body.decode('utf-8'):
+            self.release_lock()
+        # elif ......
 
+        return JsonResponse({'status': 204})
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class
-
+        print('post')
         #Exp
         json_data = json.loads(request.body)
 
@@ -69,7 +105,7 @@ class NewView(APIView):
                 fechayHora=str(fechayhora),
                 idUsuarios_id=idUsuarios,
                 idExperimentos=experimento,
-                # PONER ESTADO CON NOMBRE OFICIAL
+                estado='pendiente',
             )
             fechayhora += datetime.timedelta(minutes=ventanaEntreCapturas)
         
@@ -91,14 +127,14 @@ class NewView(APIView):
                     tipoPlaca=pl[1],
                 )
 
+        self.release_lock()
         return JsonResponse({'success': True})
-
+            
 #       ------Panel de Control------
 
 class ControlView(View):
     def get(self, request, *args, **kwargs):
-        ####   CAMBIAR ESTADO A NOMBRE OFICIAL
-        id_experimentos = Tareas.objects.exclude(estado='acabado').values_list('idExperimentos', flat=True).distinct()
+        id_experimentos = Tareas.objects.exclude(estado='borrada').values_list('idExperimentos', flat=True).distinct()
         experimentos = []
         for id in id_experimentos:
             experimento = Experimentos.objects.get(idExperimentos=id)
@@ -106,7 +142,7 @@ class ControlView(View):
             aplicacion = experimento.aplicacion
             nombreProyecto = experimento.nombreProyecto
             tareas_totales = Tareas.objects.filter(idExperimentos=id)
-            tareas_acabadas = Tareas.objects.filter(idExperimentos=id).exclude(estado='acabado')
+            tareas_acabadas = Tareas.objects.filter(idExperimentos=id).exclude(estado='borrada')
             experimentos.append({
                 'id': id,
                 'nombre': nombreExperimento,
@@ -150,8 +186,8 @@ class ControlExpView(View):
             'nombre':nombreExperimento,
             'proyecto':nombreProyecto,
             'aplicacion':aplicacion,
-            'placas':len(placas_totales),
-            'capturas':len(tareas_totales),
+            'nplacas':len(placas_totales),
+            'ncapturas':len(tareas_totales),
             'condiciones': list(condiciones),
             'placas': list(placas),
             'capturas': events,
@@ -216,8 +252,7 @@ class ControlExpView(View):
 
 class ResultView(View):
     def get(self, request, *args, **kwargs):
-        #####   CAMBIAR ESTADO A NOMBRE OFICIAL
-        id_experimentos = Tareas.objects.filter(estado='acabado').values_list('idExperimentos', flat=True).distinct()
+        id_experimentos = Tareas.objects.filter(estado='borrada').values_list('idExperimentos', flat=True).distinct()
         experimentos = []
         for id in id_experimentos:
             experimento = Experimentos.objects.get(idExperimentos=id)

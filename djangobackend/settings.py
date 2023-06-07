@@ -30,7 +30,7 @@ SECRET_KEY = 'django-insecure-c(0n^(m1u^k-4e^!g#c)3ocxg6n*#fh2bgpsx(wmdfja9(z-z(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['192.168.1.120', 'localhost', '127.0.0.1'] #!!!! Añadir la IP del equipo en red para que otros equipos se conecten 192.168.1.120
 
 
 # Application definition

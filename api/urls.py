@@ -4,7 +4,6 @@ from django.views.decorators.csrf import csrf_exempt
 from .views import NewView, ControlView, ControlExpView, ResultView, ResultExpView
 
 urlpatterns = [
-    path('', views.getRoutes,  name="routes"),
     path('new/', NewView.as_view()),
     path('results/', ResultView.as_view()),
     path('results/<int:pk>', ResultExpView.as_view()),
