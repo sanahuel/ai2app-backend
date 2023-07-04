@@ -30,7 +30,7 @@ SECRET_KEY = 'django-insecure-c(0n^(m1u^k-4e^!g#c)3ocxg6n*#fh2bgpsx(wmdfja9(z-z(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['192.168.1.120', 'localhost', '127.0.0.1'] #!!!! Añadir la IP del equipo en red para que otros equipos se conecten 192.168.1.120
+ALLOWED_HOSTS = ['192.168.1.120', 'localhost', '127.0.0.1', '192.168.1.131'] #!!!! Añadir la IP del equipo en red para que otros equipos se conecten 192.168.1.120
 
 
 # Application definition
@@ -60,12 +60,13 @@ REST_FRAMEWORK = {
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=90),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': False,
 
+    'JWT_SECRET_KEY': 'secret_key_cambiar1234',
     'ALGORITHM': 'HS256',
     'VERIFYING_KEY': None,
     'AUDIENCE': None,
