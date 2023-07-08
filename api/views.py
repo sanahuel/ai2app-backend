@@ -38,6 +38,7 @@ code = None
 class DispositivoView(APIView):
     def get(self, request, *args, **kwargs):
         dispositivo = Dispositivos.objects.first()
+
         if dispositivo.modelo == 'miniTower':
             capacidad = 18
         else: return JsonResponse({'error': 'Error: Modelo desconocido'})
@@ -100,7 +101,8 @@ class NewView(APIView):
         else:
             get=[]
             self.acquire_lock()
-            capturas = list(Tareas.objects.values_list('fechayHora', 'idExperimentos'))
+            capturas = list(Tareas.objects.order_by('fechayHora').values_list('fechayHora', 'idExperimentos')) 
+            # Si las capturas no están ordenadas cronológicamente el algoritmo del planificador no funcionará
             for i in range(len(capturas)):
                 experimento = Experimentos.objects.filter(idExperimentos=capturas[i][1]).first()
                 get.append((capturas[i][0],experimento.nombreExperimento))
@@ -135,6 +137,7 @@ class NewView(APIView):
         color = json_data['datos']['color']
         idUsuarios = json_data['datos']['userId']
         dispositivo = Dispositivos.objects.first()
+        gusanosPorCondicion = json_data['datos']['gusanosPorCondicion']
 
         ### CONDICIONES
         nCondiciones = json_data['condiciones']['nCondiciones']
@@ -180,6 +183,7 @@ class NewView(APIView):
             numeroImgs=nImgs,
             frecuencia=frecuencia,
             color=color,
+            gusanosPorCondicion=gusanosPorCondicion,
         )
 
         ### Tareas
@@ -197,8 +201,8 @@ class NewView(APIView):
             m = int(hora.split(':')[1])
 
             tarea = Tareas.objects.create(
-                # idDispositivos = dispositivo,
-                fechayHora=str(datetime.datetime(year=año,month=mes,day=dia,hour=h,minute=m)),
+                idDispositivos = dispositivo,
+                fechayHora=str(datetime.datetime(year=año,month=mes,day=dia,hour=h+2,minute=m)), ###h+2 TODO cambiar...zona horaria
                 idUsuarios_id=idUsuarios,
                 idExperimentos=experimento,
                 estado='pendiente',
@@ -213,19 +217,18 @@ class NewView(APIView):
             pallets = Pallets.objects.create(
                 idDispositivos=dispositivo,
                 localizacion=pallet,
-                
             )
             palletsBBDD.append(pallets.idPallets)
         
         ### Cond + Placas
         for c in condiciones:
-            condicion = Condiciones.objects.create(
-                nombreCondicion=c['name'],
-                nCondiciones=nCondiciones,
-                idExperimentos=experimento,
-            )
-
             if(c['name']!=''):
+                condicion = Condiciones.objects.create(
+                    nombreCondicion=c['name'],
+                    nCondiciones=nCondiciones,
+                    idExperimentos=experimento,
+                )
+            
                 for pl in placas[c['name']]:
                     placa = Placas.objects.create(
                         idPallets=palletsBBDD[pl['pallet']],

@@ -4,7 +4,8 @@ from django.contrib.auth.models import User
 # Create your models here.
 
 class Dispositivos(models.Model):
-    IP = models.CharField(primary_key=True, max_length=45)
+    idDispositivos = models.AutoField(primary_key=True)
+    IP = models.CharField(max_length=45)
     modelo = models.CharField(max_length=45)
     imgsPath = models.CharField(max_length=200)
 
@@ -22,6 +23,7 @@ class Experimentos(models.Model):
     numeroImgs = models.IntegerField()
     frecuencia = models.IntegerField()
     color = models.CharField(max_length=45, default='#0646b4')
+    gusanosPorCondicion = models.IntegerField(null=True)
 
 class Tareas(models.Model):
     idTareas = models.AutoField(primary_key=True)
@@ -33,7 +35,7 @@ class Tareas(models.Model):
     parametrosProcesamiento = models.CharField(max_length=45)
     estado = models.CharField(max_length=45)
     cancelada = models.BooleanField(default=False)
-    # idDispositivos = models.ForeignKey(Dispositivos,on_delete=models.CASCADE)
+    idDispositivos = models.ForeignKey(Dispositivos,on_delete=models.CASCADE)
 
 class Condiciones(models.Model):
     idCondiciones = models.AutoField(primary_key=True)
