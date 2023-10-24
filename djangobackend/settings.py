@@ -159,6 +159,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+DATA_UPLOAD_MAX_MEMORY_SIZE = 15242880
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.1/topics/i18n/
@@ -170,6 +171,14 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = False
+
+# Email settings
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.office365.com'
+EMAIL_PORT = 587 
+EMAIL_USE_TLS = True  # False if the email provider doesn't use TLS
+EMAIL_HOST_USER = 'alarm.sender@outlook.com'
+EMAIL_HOST_PASSWORD = 'avi2024cemis'
 
 
 # Static files (CSS, JavaScript, Images)
