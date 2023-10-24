@@ -39,6 +39,7 @@ urlpatterns = [
     path('local/move_pallet/', views.local_move_pallet_to_empty),
     path('local/send_z_pos_ros2/<int:new_z_position>/', views.local_message_pos_z),
     path('local/emergency_stop/', views.local_emergency_stop),
+    path('local/estado_dispositivo/', views.local_estado_dispositivo),
     path('local/get_color/<int:idPallet>/', views.local_get_color_by_idPallets),
     path('local/get_color_alm/<str:almacen_id>/', views.local_get_color_by_almacen),
     path('local/distr_pallet/<int:idPallet>', LocalDistrPallet.as_view()),
@@ -56,7 +57,9 @@ urlpatterns = [
     path('local/camon/', views.local_turn_on_cam),
     path('local/camoff/', views.local_turn_camera_off),
     path('local/dispon/', views.local_turn_display_on),
-    path('local/dispoff/', views.local_turn_display_on),
+    path('local/dispoff/', views.local_turn_display_off),
+    path('local/toweron/', views.local_turn_tower_on),
+    path('local/toweroff/', views.local_turn_tower_off),
     path('local/raspstatus/', views.local_rasp_status),
     path('local/dockerprocs/', views.local_docker_processes),
     path('local/sensor_msgs/', views.local_sensor_messages),
@@ -69,5 +72,4 @@ urlpatterns = [
 
     path('local/image_callback_2/', local_image_callback_2),
     path('local/image_view/camera2', local_image_view_2),
-
 ]

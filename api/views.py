@@ -26,7 +26,7 @@ from .models import Experimentos, Tareas, Placas, Condiciones, Resultados_lifesp
 from django.db.models import Count
 from django.db.models.functions import Substr
 from .serializers import CreateEnsayoSerializer
-from .serializers import PalletsSerializer, PlacasSerializer, PalletPlacasSerializer, DispositivosSerializar
+from .serializers import PalletsSerializer, PlacasSerializer, PalletPlacasSerializer, DispositivosSerializar, ExperimentosSerializer
 
 
 # Create your views here.INSERT INTO api_dispositivos (IP, modelo, imgsPath)
@@ -818,6 +818,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         # Add custom claims
         token['username'] = user.username
+        token['permission'] = user.is_superuser
         # ...
 
         return token
@@ -968,7 +969,8 @@ def local_move_pallet_to_empty(request):
 def local_message_pos_z(request, new_z_position):
 
     data = "ZPos:" + str(new_z_position)
-    url = "http://192.168.1.118:8095/publish/"
+    # url = "http://192.168.1.118:8095/publish/"
+    url = "http://127.0.0.1:8095/publish/"
     response = requests.post(url, data=data)
 
     if response.status_code == 200:
@@ -977,39 +979,98 @@ def local_message_pos_z(request, new_z_position):
     else:
         return JsonResponse({'Error': 'Posición en \'Z\' no enviada correctamente'})
     
+# def local_message_pallet_selection(request, id_pallet):
+
+#     data = "Selected Pallet: " + str(id_pallet)
+#     url = "http://192.168.1.118:8095/publish/"
+#     response = requests.post(url, data=data)
+#     result = subprocess.run(['ping', '-c', '1', ip], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+#     if response.status_code == 200:
+#         return JsonResponse({'Correcto': 'Pallet seleccionado correctamente'})
+
+#     else:
+#         return JsonResponse({'Error': 'No ha sido posible seleciconar pallet'})
+
+import paramiko
+
+def run_recapture(id_pallet):
+
+    ssh_client = paramiko.SSHClient()
+
+    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    ssh_client.connect("localhost", username="usuario", password="Laboratorio.Robotica")
+
+    shell = ssh_client.invoke_shell()
+
+    final_command = f'''source /home/usuario/PycharmProjects/pythonProject/venv/bin/activate
+    python /home/usuario/PycharmProjects/pythonProject/testRecaptura.py {id_pallet}
+    '''
+
+    stdin, stdout, stderr = ssh_client.exec_command(final_command)
+
+    # Check for any errors or handle the results as needed
+    # error_message = stderr.read().decode('utf-8')
+    # out_message = stdout.read().decode('utf-8')
+
+    # print(f'Error message: {error_message}')
+    # print(f'Output message: {out_message}')
+
+    ssh_client.close()
+
+
 def local_message_pallet_selection(request, id_pallet):
 
-    data = "Selected Pallet: " + str(id_pallet)
-    url = "http://192.168.1.118:8095/publish/"
-    response = requests.post(url, data=data)
-
-    if response.status_code == 200:
-        return JsonResponse({'Correcto': 'Pallet seleccionado correctamente'})
-
-    else:
-        return JsonResponse({'Error': 'No ha sido posible seleciconar pallet'})
     
+    recapture_thread = threading.Thread(target=run_recapture, args=(id_pallet,))
+    recapture_thread.start()
+
+    return JsonResponse({'Correcto': 'Pallet seleccionado correctamente'})
+
+class EstadoDispositivo:
+    def __init__(self):
+        self.estado = 'funciona'
+
+    def return_state(self):
+        return self.estado
+    
+    def switch_state(self):
+        if self.estado == 'funciona':
+            self.estado = 'pausa'
+
+        else:
+            self.estado = 'funciona'
+    
+DispEstado = EstadoDispositivo()
+
 def local_emergency_stop(request):
 
+    global DispEstado
+
     data = "Performing emergency stop"
-    url = "http://192.168.1.118:8095/publish/"
+    # url = "http://192.168.1.118:8095/publish/"
+    url = "http://127.0.0.1:8095/publish/"
     response = requests.post(url, data=data)
 
     dispositivo = Dispositivos.objects.first()
 
-    if (dispositivo.estado == 'funciona'):
-        dispositivo.estado = 'pausa'
-        dispositivo.save()
+    if (DispEstado.return_state() == 'funciona'):
+        DispEstado.switch_state()
 
     else:
-        dispositivo.estado = 'funciona'
-        dispositivo.save()
+        DispEstado.switch_state()
 
     if response.status_code == 200:
-        return JsonResponse({'Correcto': 'Parada de emergencia correcta.', 'Estado': dispositivo.estado})
+        return JsonResponse({'Correcto': 'Parada de emergencia correcta.', 'Estado': DispEstado.return_state()})
 
     else:
         return JsonResponse({'Error': 'Mostrando mensaje de error.'})
+    
+def local_estado_dispositivo(request):
+
+    global DispEstado
+    return JsonResponse({'Estado': DispEstado.return_state()})
     
 def local_get_color_by_idPallets(request, idPallet):
     try:
@@ -1047,12 +1108,14 @@ def get_max_position(placas):
     max_rows, max_cols = 0, 0
 
     for placa in placas:
-        #tipoPlaca = "5x3" filas x columnas
-        max_rows = int(placa.tipoPlaca[0])
-        max_cols = int(placa.tipoPlaca[2])
-        break
+        # row, col = map(int, placa.posicion.split(','))
+        row_str, col_str = placa.posicion.split(',')
+        row = int(row_str)
+        col = int(col_str)
+        max_rows = max(max_rows, row)
+        max_cols = max(max_cols, col)
 
-    return max_rows, max_cols
+    return max_rows + 1, max_cols + 1
 
 class LocalDistrPallet(APIView):
     def get(self, request, *args, **kwargs):
@@ -1201,8 +1264,6 @@ def local_update_n_cassettes(request, ip):
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-import paramiko
-
 @csrf_exempt 
 def local_turn_on_rasp(request):
     if request.method == 'POST':
@@ -1341,7 +1402,7 @@ name_docker = 'ubuntu:latest_2'
 ros_workspace = '/home/pi/ros2_ws_raspberry:/home/ros2_ws_raspberry/'
 docker_down_flag = False
 
-def check_docker_processes(IP):
+def check_docker_processes_camera(IP):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     
@@ -1395,31 +1456,43 @@ def ssh_launch_cameras(IP):
         shell = client.invoke_shell()
 
         # Execute the commands within the same shell
-        shell.send("export DISPLAY=:0\n")
-        shell.send("xhost +\n")
-        shell.send(run_docker + "\n")
-        print('Connecting to the docker')
+        stdin, stdout, stderr = client.exec_command("ps -la | grep camara")
+        output = stdout.read().decode('utf-8').strip()
+        print(f'Recibo esto: {output}')
+        if not output:
+            # Execute the commands within the same shell
+            shell.send("export DISPLAY=:0\n")
+            shell.send("xhost +\n")
+            shell.send(run_docker + "\n")
+            print('Connecting to the docker')
 
-        shell.send("ulimit -c 0\n")
-        shell.send("cd /home/ros2_ws_raspberry/\n")
-        shell.send("source install/setup.bash\n")
-        shell.send("ros2 run camara_hq_completo_ros2 camara_hq_completo_ros2_node\n")
-        time.sleep(10)
+            shell.send("ulimit -c 0\n")
+            shell.send("cd /home/ros2_ws_raspberry/\n")
+            shell.send("source install/setup.bash\n")
+            shell.send("ros2 run camara_hq_completo_ros2 camara_hq_completo_ros2_node\n")
+            # shell.send("ros2 run camara_hq_completo_ros2 camara_hq_completo_ros2_node\n")
+            time.sleep(10)
 
-        global docker_down_flag
-        while docker_down_flag != True:
-            # Do something useless to stop the thread from finishing
-            aux = check_docker_processes(IP)
-            
-            if aux == 0:
-                docker_down_flag = True
+            global docker_down_flag
+            while docker_down_flag != True:
+                # Check if the task is still running
+                aux = check_docker_processes_camera(IP)
                 
-            time.sleep(5)
+                if aux == 0:
+                    # docker_down_flag = True
+                    print("\n\n\nAbout to turn off cameras\n\n\n")
+                    break
+                    
+                time.sleep(5)
 
-        if not shell.closed:
-            shell.send('\x03')
+            if not shell.closed:
+                shell.send('\x03')
 
-        stdin, stdout, stderr = client.exec_command("exit")
+            stdin, stdout, stderr = client.exec_command("exit")
+            
+        else:
+            print('\n\n\nCamera already connected\n\n\n')
+            # return 1
 
     except paramiko.SSHException as e:
         print(f"SSH Exception: {e}")
@@ -1452,15 +1525,14 @@ def local_turn_on_cam(request):
         except Exception as e:
             print(f"An error occurred: {e}")
         finally:
-            client.close()
+            a = 1
+            # client.close()
 
         # Return a success response
         return JsonResponse({'message': 'nCassettes updated successfully'})
     
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
-
-import subprocess
 
 @csrf_exempt 
 def local_rasp_status(request):
@@ -1491,11 +1563,109 @@ def local_rasp_status(request):
                 'message': str(e),
                 'status': 'error',
             }
-        print(f'Devuelvo esto {response_data}')
+        # print(f'Devuelvo esto {response_data}')
         return JsonResponse(response_data)
     
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed', 'status': 'unreachable'}, status=405)
+
+def check_docker_processes_display(IP):
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    try:
+        # Connect to the raspberry
+        client.connect(IP, username="pi", password="raspberry")
+
+        # Execute the commands
+        # Start a single shell session and run multiple commands
+        shell = client.invoke_shell()
+
+        # Execute the commands within the same shell
+        stdin, stdout, stderr = client.exec_command("ps -la | grep display")
+        output = stdout.read().decode('utf-8').strip()
+        print(f'Recibo esto: {output}')
+        if not output:
+            return 0
+            
+        else:
+            return 1
+        
+    except paramiko.SSHException as e:
+        print(f"SSH Exception: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        client.close()
+
+def ssh_launch_display(IP):
+    print('Connecting to a Raspberry')
+    # Create a client object
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    run_docker = "docker run --rm -it --net=host " + \
+                 "--privileged " + \
+                 "--tmpfs /dev/shm:exec " + \
+                 "-v /run/udev:/run/udev:ro " + \
+                 "-e MTX_PATHS_CAM_SOURCE=rpiCamera " + \
+                 "-v /tmp/.X11-unix:/tmp/.X11-unix:ro " + \
+                 "-e DISPLAY=$DISPLAY " + \
+                 "-v " + ros_workspace + " " + \
+                 name_docker
+
+    try:
+        # Connect to the raspberry
+        client.connect(IP, username="pi", password="raspberry")
+
+        # Execute the commands
+        # Start a single shell session and run multiple commands
+        shell = client.invoke_shell()
+
+        # Execute the commands within the same shell
+        stdin, stdout, stderr = client.exec_command("ps -la | grep display")
+        output = stdout.read().decode('utf-8').strip()
+        print(f'Recibo esto: {output}')
+        if not output:
+            # Execute the commands within the same shell
+            shell.send("export DISPLAY=:0\n")
+            shell.send("xhost +\n")
+            shell.send(run_docker + "\n")
+            print('Connecting to the docker')
+
+            shell.send("ulimit -c 0\n")
+            shell.send("cd /home/ros2_ws_raspberry/\n")
+            shell.send("source install/setup.bash\n")
+            shell.send("ros2 run display display_node\n")
+            time.sleep(10)
+
+            global docker_down_flag
+            while docker_down_flag != True:
+                # Check if the task is still running
+                aux = check_docker_processes_display(IP)
+                
+                if aux == 0:
+                    # docker_down_flag = True
+                    print("\n\n\nAbout to turn off display\n\n\n")
+                    break
+                    
+                time.sleep(5)
+
+            if not shell.closed:
+                shell.send('\x03')
+
+            stdin, stdout, stderr = client.exec_command("exit")
+            
+        else:
+            print('\n\n\nDisplay already connected\n\n\n')
+            # return 1
+
+    except paramiko.SSHException as e:
+        print(f"SSH Exception: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        client.close()
 
 @csrf_exempt 
 def local_turn_display_on(request):
@@ -1512,23 +1682,16 @@ def local_turn_display_on(request):
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         try:
-            # Connect to the raspberry
-            client.connect(ip, username="pi", password="raspberry")
-            time.sleep(2)
-
-            # Execute the commands
-            # Start a single shell session and run multiple commands
-            shell = client.invoke_shell()
-
-            # Execute the commands
-            stdin, stdout, stderr = client.exec_command("date") #Change
+            display_thread_1 = threading.Thread(target=ssh_launch_display, args=(ip,))
+            display_thread_1.start()
 
         except paramiko.SSHException as e:
             print(f"SSH Exception: {e}")
         except Exception as e:
             print(f"An error occurred: {e}")
         finally:
-            client.close()
+            a = 1
+            # client.close()
 
         # Return a success response
         return JsonResponse({'message': 'nCassettes updated successfully'})
@@ -1536,7 +1699,176 @@ def local_turn_display_on(request):
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
+def check_docker_processes_tower(IP):
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    try:
+        # Connect to the raspberry
+        client.connect(IP, username="pi", password="raspberry")
+
+        # Execute the commands
+        # Start a single shell session and run multiple commands
+        shell = client.invoke_shell()
+
+        # Execute the commands within the same shell
+        stdin, stdout, stderr = client.exec_command("ps -la | grep tower")
+        output = stdout.read().decode('utf-8').strip()
+        print(f'Recibo esto: {output}')
+        if not output:
+            return 0
+            
+        else:
+            return 1
+        
+    except paramiko.SSHException as e:
+        print(f"SSH Exception: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        client.close()
+
+def ssh_launch_tower(IP):
+    print('Connecting to a Raspberry')
+    # Create a client object
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    run_docker = "docker run --rm -it --net=host " + \
+                 "--privileged " + \
+                 "--tmpfs /dev/shm:exec " + \
+                 "-v /run/udev:/run/udev:ro " + \
+                 "-e MTX_PATHS_CAM_SOURCE=rpiCamera " + \
+                 "-v /tmp/.X11-unix:/tmp/.X11-unix:ro " + \
+                 "-e DISPLAY=$DISPLAY " + \
+                 "-v " + ros_workspace + " " + \
+                 name_docker
+
+    try:
+        # Connect to the raspberry
+        client.connect(IP, username="pi", password="raspberry")
+
+        # Execute the commands
+        # Start a single shell session and run multiple commands
+        shell = client.invoke_shell()
+
+        # Execute the commands within the same shell
+        stdin, stdout, stderr = client.exec_command("ps -la | grep tower")
+        output = stdout.read().decode('utf-8').strip()
+        print(f'Recibo esto: {output}')
+        if not output:
+            # Execute the commands within the same shell
+            shell.send("export DISPLAY=:0\n")
+            shell.send("xhost +\n")
+            shell.send(run_docker + "\n")
+            print('Connecting to the docker')
+
+            shell.send("ulimit -c 0\n")
+            shell.send("cd /home/ros2_ws_raspberry/\n")
+            shell.send("source install/setup.bash\n")
+            shell.send("ros2 run towerRobot towerRobot\n")
+            time.sleep(10)
+
+            global docker_down_flag
+            while docker_down_flag != True:
+                # Check if the task is still running
+                aux = check_docker_processes_tower(IP)
+                
+                if aux == 0:
+                    # docker_down_flag = True
+                    print("\n\n\nAbout to turn off tower\n\n\n")
+                    break
+                    
+                time.sleep(5)
+
+            if not shell.closed:
+                shell.send('\x03')
+
+            stdin, stdout, stderr = client.exec_command("exit")
+            
+        else:
+            print('\n\n\nTower already connected\n\n\n')
+            # return 1
+
+    except paramiko.SSHException as e:
+        print(f"SSH Exception: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        client.close()
+
+@csrf_exempt 
+def local_turn_tower_on(request):
+    if request.method == 'POST':
+        
+        # Retrieve the new imgsPath value from the request body
+        body = json.loads(request.body)
+        ip = body.get('auxRasP', '')
+
+        #print(f'\n\n\n /////////// Esta es la IP de reboot: {ip} /////////// \n\n\n')
+        
+        # Create a client object
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        try:
+            tower_thread_1 = threading.Thread(target=ssh_launch_tower, args=(ip,))
+            tower_thread_1.start()
+
+        except paramiko.SSHException as e:
+            print(f"SSH Exception: {e}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            a = 1
+            # client.close()
+
+        # Return a success response
+        return JsonResponse({'message': 'tower turned on successfully'})
+    
+    # Return an error response for unsupported methods
+    return JsonResponse({'message': 'Method not allowed'}, status=405)
+
 import copy
+
+# @csrf_exempt 
+# def local_docker_processes(request):
+#     if request.method == 'POST':
+#         # Retrieve the new imgsPath value from the request body
+#         body = json.loads(request.body)
+#         ip = body.get('auxRasP', '')
+#         client = paramiko.SSHClient()
+#         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+#         val = 0
+
+#         try:
+#             # Connect to the raspberry
+#             client.connect(ip, username="pi", password="raspberry")
+#             time.sleep(2)
+
+#             # Execute the commands
+#             stdin, stdout, stderr = client.exec_command("docker ps -a")
+#             stdout = copy.copy(stdout.readlines())
+#             print('Num_process:', len(stdout)-1)
+#             val = len(stdout)-1
+
+#         except paramiko.SSHException as e:
+#             print(f"SSH Exception: {e}")
+#             client.close()
+#             return JsonResponse({'processes': str(0)})
+#         except Exception as e:
+#             print(f"An error occurred: {e}")
+#             client.close()
+#             return JsonResponse({'processes': str(0)})
+#         finally:
+#             client.close()
+
+#             # Return a success response
+#             return JsonResponse({'processes': str(val)})
+    
+#     # Return an error response for unsupported methods
+#     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
 @csrf_exempt 
 def local_docker_processes(request):
@@ -1547,32 +1879,32 @@ def local_docker_processes(request):
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        val = 0
-
         try:
-            # Connect to the raspberry
-            client.connect(ip, username="pi", password="raspberry")
-            time.sleep(2)
+            with client:
+                # Connect to the Raspberry Pi
+                client.connect(ip, username="pi", password="raspberry")
+                time.sleep(2)
 
-            # Execute the commands
-            stdin, stdout, stderr = client.exec_command("docker ps -a")
-            stdout = copy.copy(stdout.readlines())
-            print('Num_process:', len(stdout)-1)
-            val = len(stdout)-1
+                # Execute the command
+                stdin, stdout, stderr = client.exec_command("docker ps -a")
+                stdout = copy.copy(stdout.readlines())
+                # print('Num_process:', len(stdout)-1)
+                val = len(stdout)-1
 
         except paramiko.SSHException as e:
             print(f"SSH Exception: {e}")
+            # print('\n\n\n Paramiko Exception \n\n\n')
+            return JsonResponse({'processes': str(0)})
         except Exception as e:
             print(f"An error occurred: {e}")
-        finally:
-            client.close()
+            # print('\n\n\n Exception \n\n\n')
+            return JsonResponse({'processes': str(0)})
 
-            # Return a success response
-            return JsonResponse({'processes': str(val)})
-    
+        # Return the success response outside of the try-except block
+        return JsonResponse({'processes': str(val)})
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
-
 
 def ssh_stop_cameras(IP):
     print('Connecting to a Raspberry')
@@ -1593,12 +1925,13 @@ def ssh_stop_cameras(IP):
         stdin, stdout, stderr = client.exec_command("ps -la | grep camara | awk '{print $4}'")
         aux_char = (stdout.read().decode('utf-8'))
         # print(f"Se me devuelto esto {aux_char}")
+        print("\n\n\nA punto de finalizar el proceso para el apagado de la camara\n\n\n")
         stop_string = "sudo kill -9 " + aux_char + "\n"
         print(stop_string)
         shell.send(stop_string)
         time.sleep(1)
         shell.send("y\n")
-        docker_down_flag = True
+        # docker_down_flag = True
         # stdin, stdout, stderr = client.exec_command("docker kill $(docker ps -q)")
 
     except paramiko.SSHException as e:
@@ -1624,6 +1957,8 @@ def local_turn_camera_off(request):
             camera_thread_1 = threading.Thread(target=ssh_stop_cameras, args=(ip,))
             camera_thread_1.start()
 
+            camera_thread_1.join()
+
         except paramiko.SSHException as e:
             print(f"SSH Exception: {e}")
         except Exception as e:
@@ -1637,6 +1972,41 @@ def local_turn_camera_off(request):
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
+def ssh_stop_display(IP):
+    print('Connecting to a Raspberry')
+    # Create a client object
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    try:
+        # Connect to the raspberry
+        client.connect(IP, username="pi", password="raspberry")
+        time.sleep(2)
+
+        # Execute the commands
+        # Start a single shell session and run multiple commands
+        shell = client.invoke_shell()
+
+        # Execute the commands
+        stdin, stdout, stderr = client.exec_command("ps -la | grep display | awk '{print $4}'")
+        aux_char = (stdout.read().decode('utf-8'))
+        # print(f"Se me devuelto esto {aux_char}")
+        print("\n\n\nA punto de finalizar el proceso para el apagado del display\n\n\n")
+        stop_string = "sudo kill -9 " + aux_char + "\n"
+        print(stop_string)
+        shell.send(stop_string)
+        time.sleep(1)
+        shell.send("y\n")
+        # docker_down_flag = True
+        # stdin, stdout, stderr = client.exec_command("docker kill $(docker ps -q)")
+
+    except paramiko.SSHException as e:
+        print(f"SSH Exception: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        client.close()
+
 @csrf_exempt 
 def local_turn_display_off(request):
     if request.method == 'POST':
@@ -1649,8 +2019,75 @@ def local_turn_display_off(request):
         val = 0
 
         try:
-            camera_thread_1 = threading.Thread(target=ssh_launch_cameras, args=(ip,))
-            camera_thread_1.start()
+            display_thread_1 = threading.Thread(target=ssh_stop_display, args=(ip,))
+            display_thread_1.start()
+
+            display_thread_1.join()
+
+        except paramiko.SSHException as e:
+            print(f"SSH Exception: {e}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            client.close()
+
+            # Return a success response
+            return JsonResponse({'processes': str(val)})
+    
+    # Return an error response for unsupported methods
+    return JsonResponse({'message': 'Method not allowed'}, status=405)
+
+def ssh_stop_tower(IP):
+    print('Connecting to a Raspberry')
+    # Create a client object
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    try:
+        # Connect to the raspberry
+        client.connect(IP, username="pi", password="raspberry")
+        time.sleep(2)
+
+        # Execute the commands
+        # Start a single shell session and run multiple commands
+        shell = client.invoke_shell()
+
+        # Execute the commands
+        stdin, stdout, stderr = client.exec_command("ps -la | grep tower | awk '{print $4}'")
+        aux_char = (stdout.read().decode('utf-8'))
+        # print(f"Se me devuelto esto {aux_char}")
+        print("\n\n\nA punto de finalizar el proceso para el apagado de la torre\n\n\n")
+        stop_string = "sudo kill -9 " + aux_char + "\n"
+        print(stop_string)
+        shell.send(stop_string)
+        time.sleep(1)
+        shell.send("y\n")
+        # docker_down_flag = True
+        # stdin, stdout, stderr = client.exec_command("docker kill $(docker ps -q)")
+
+    except paramiko.SSHException as e:
+        print(f"SSH Exception: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        client.close()
+
+@csrf_exempt 
+def local_turn_tower_off(request):
+    if request.method == 'POST':
+        # Retrieve the new imgsPath value from the request body
+        body = json.loads(request.body)
+        ip = body.get('auxRasP', '')
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        val = 0
+
+        try:
+            tower_thread_1 = threading.Thread(target=ssh_stop_tower, args=(ip,))
+            tower_thread_1.start()
+
+            tower_thread_1.join()
 
         except paramiko.SSHException as e:
             print(f"SSH Exception: {e}")
@@ -1767,6 +2204,7 @@ def local_update_experimentos_estado(request, idExperimento):
         if (nEstado == 'descargado'):
             placas = Placas.objects.filter(idExperimentos = idExperimento)
             id_pallets = list(placas.values_list('idPallets', flat=True).distinct())
+            Placas.objects.filter(idExperimentos = idExperimento).update(idPallets=None)
             print(id_pallets)
             pallets_list = []
             for idPal in id_pallets:
@@ -1879,21 +2317,36 @@ def local_image_view_2(request):
 MAX_VALOR = 30
 MIN_VALOR = 0
 
+class Alarm:
+    def __init__(self, id, message, type_alarm):
+        self.id = id
+        self.message = message
+        self.type_alarm = type_alarm
+
+    def to_json(self):
+        alarm_dict = {
+            "id": self.id,
+            "message": self.message,
+            "critical": self.type_alarm
+        }
+        
+        return json.dumps(alarm_dict)
+
 class ContainerAlarm:
     def __init__(self):
         self.condition = threading.Condition()
         self.contador = 0
-        self.vect = [''] * MAX_VALOR
+        self.vect = [None] * MAX_VALOR
         self.bufIN = 0
         self.bufOUT = 0
 
-    def put_item(self, value):
+    def put_item(self, alarm):
         with self.condition:
 
             while self.contador == MAX_VALOR:
                 self.condition.wait()
 
-            self.vect[self.bufIN] = value
+            self.vect[self.bufIN] = alarm
 
             if (self.bufIN < MAX_VALOR - 1):
                 self.bufIN += 1
@@ -1907,8 +2360,8 @@ class ContainerAlarm:
     def get_item(self):
         with self.condition:
 
-            valor = self.vect[self.bufOUT]
-            return valor
+            alarm = self.vect[self.bufOUT]
+            return alarm
         
     def acknowledge_alarm(self):
         with self.condition:
@@ -1917,7 +2370,7 @@ class ContainerAlarm:
                 #self.condition.wait()
                 return
 
-            valor = self.vect[self.bufOUT]
+            alarm = self.vect[self.bufOUT]
 
             if (self.bufOUT < MAX_VALOR - 1):
                 self.bufOUT += 1
@@ -1927,7 +2380,7 @@ class ContainerAlarm:
 
             self.contador -= 1
             self.condition.notify_all()
-            return valor
+            return alarm
 
     def read_items(self):
         with self.condition:
@@ -1937,6 +2390,7 @@ class ContainerAlarm:
 contenedorAlarma = ContainerAlarm()
 
 info_alarma = ''
+# info_alarma = Alarm()
 
 from django.core.mail import send_mail
 
@@ -1947,8 +2401,15 @@ def ros2_data_view(request):
     global info_alarma
 
     if request.method == 'POST':
-        data = request.POST.get('data', '')
-        info_alarma = data
+        data_text = request.POST.get('alarma', '')
+        data_id = request.POST.get('id', '')
+        data_critical = request.POST.get('critical', '')
+        alarma = Alarm(data_id, data_text, data_critical)
+        info_alarma = data_text
+
+        # put_alarm = Alarm(data.interfaces.msg.AlarmsMsgs.id_alarma, data.interfaces.msg.AlarmsMsgs.alarma, data.interfaces.msg.AlarmsMsgs.critical)
+        print(f'I received this alarm: {alarma}')
+        # print(f'This is the put alarm: {put_alarm}')
 
         # Send email
         subject = 'Alarm Notification'
@@ -1958,8 +2419,8 @@ def ros2_data_view(request):
 
         # Use Django's send_mail function to send the email
         send_mail(subject, message, from_email, recipient_list)
-
-        contenedorAlarma.put_item(info_alarma)
+        # print(f'I received this alarm: {data}')
+        contenedorAlarma.put_item(alarma)
 
         # Send SSE event to connected clients
         # send_event('ros2_events', 'message', str(data))
@@ -1985,4 +2446,15 @@ def handle_alarm(request):
     elif request.method == 'GET':
 
         dato = contenedorAlarma.read_items()
-        return JsonResponse({'dato': dato}) 
+        if dato == 0:
+            itemsAl = {
+                "id": -1,
+                "message": "Sin alarmas",
+                "critical": False,
+            }
+            itemsAl = json.dumps(itemsAl)
+        else:
+            itemsAl = contenedorAlarma.get_item().to_json()
+        # itemsAl = json.dumps(itemsAl)
+        # print(f'\n\n\nESTE ES EL ITEM DENTRO DE LA ALARMA {itemsAl}\n\n\n')
+        return JsonResponse({'dato': dato, 'alarma': itemsAl}) 
