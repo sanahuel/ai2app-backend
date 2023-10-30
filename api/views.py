@@ -1134,7 +1134,7 @@ class LocalDistrPallet(APIView):
         result['cond'] = [cond.nombreCondicion for cond in condiciones]
 
         # Create a dictionary to map 'nombreCondicion' to its index in 'cond'
-        cond_index_map = {cond.nombreCondicion: i for i, cond in enumerate(condiciones)}
+        cond_index_map = {cond.nombreCondicion: i+1 for i, cond in enumerate(condiciones)}
 
         # Step 3: Create a 2D array (condArray) to represent the matrix
         max_rows, max_cols = get_max_position(placas)
@@ -1151,6 +1151,12 @@ class LocalDistrPallet(APIView):
             condArray[row][col] = cond_index_map[placa.idCondiciones.nombreCondicion]  # Use the dictionary to get the index
 
         result['condArray'] = condArray
+
+        placa = placas.first()
+        tipoPlaca = placa.tipoPlaca
+        filas, columnas = map(int, tipoPlaca.split('x'))
+        result['filas'] = filas
+        result['columnas'] = columnas
 
         return JsonResponse(result)
     
