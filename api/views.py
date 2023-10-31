@@ -37,6 +37,25 @@ timeout_seconds = 30
 
 code = None
 
+#           --PATHS--
+
+def read_json(key):
+    json_file = "./data/paths.json"
+    try:
+        with open(json_file, 'r') as file:
+            data = json.load(file)
+            if key in data:
+                return data[key]
+            else:
+                return f"Key '{key}' not found in the JSON data."
+    except FileNotFoundError:
+        return f"File '{json_file}' not found."
+    except json.JSONDecodeError:
+        return f"Error decoding JSON in '{json_file}'."
+
+SCRIPT_CAPTURA = read_json("captura")
+SCRIPT_RECAPTURA = read_json("recaptura")
+
 #           --PLANIFICADOR--
 #       ------Dispositivo------
 
@@ -80,6 +99,7 @@ def check_tareas(tareas):
 
 class NewView(APIView):
     # permission_classes = [IsAuthenticated]
+    global SCRIPT_CAPTURA
     serializer_class = CreateEnsayoSerializer
     lock = threading.Lock()
     
@@ -208,7 +228,8 @@ class NewView(APIView):
                 meses = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
                 ## Tareas Operativo
-                command = f'TZ={TIME_ZONE} ' + "at {:02d}:{:02d} {:02d} {} {} -f /home/usuario/Escritorio/ai2app-backend/dummy.py 2>&1 | awk 'END{{print $2}}'".format(h, m, dia, meses[mes-1], str(año))
+                command = f'TZ={TIME_ZONE} ' + "at {:02d}:{:02d} {:02d} {} {} -f "+ SCRIPT_CAPTURA +" 2>&1 | awk 'END{{print $2}}'"
+                command = command.format(h, m, dia, meses[mes-1], str(año))
                 print(f'===============command============')
                 print(command)
                 print('====================================')
@@ -274,7 +295,8 @@ class NewView(APIView):
                     h = int(hora.split(':')[0])
                     m = int(hora.split(':')[1])
                     meses = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-                    command = "at {:02d}:{:02d} {:02d} {} {} -f /home/usuario/Escritorio/ai2app-backend/dummy.py 2>&1 | awk 'END{{print $2}}'".format(h, m, dia, meses[mes-1], str(año))
+                    command = "at {:02d}:{:02d} {:02d} {} {} -f "+ SCRIPT_CAPTURA + " 2>&1 | awk 'END{{print $2}}'"
+                    command = command.format(h, m, dia, meses[mes-1], str(año))
                     output = subprocess.check_output(command, shell=True).decode().strip()
                     tarea.idOperativo = int(output)
 
@@ -314,6 +336,8 @@ class ControlView(View):
         return JsonResponse({'experimentos':experimentos})
 
 class ControlExpView(View):
+    global SCRIPT_CAPTURA
+
     def get(self, request,  *args, **kwargs):
         experimento = Experimentos.objects.get(idExperimentos= self.kwargs['pk'])
         
@@ -468,7 +492,8 @@ class ControlExpView(View):
                 h = int(hora.split(':')[0])
                 m = int(hora.split(':')[1])
                 meses = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-                command = "at {:02d}:{:02d} {:02d} {} {} -f /home/usuario/Escritorio/ai2app-backend/dummy.py 2>&1 | awk 'END{{print $2}}'".format(h, m, dia, meses[mes-1], str(año))
+                command = "at {:02d}:{:02d} {:02d} {} {} -f "+ SCRIPT_CAPTURA +" 2>&1 | awk 'END{{print $2}}'"
+                command = command.format(h, m, dia, meses[mes-1], str(año))
                 output = subprocess.check_output(command, shell=True).decode().strip()
                 tarea.idOperativo = int(output)
 
@@ -995,29 +1020,17 @@ def local_message_pos_z(request, new_z_position):
 import paramiko
 
 def run_recapture(id_pallet):
+    global SCRIPT_RECAPTURA
 
-    ssh_client = paramiko.SSHClient()
-
-    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    ssh_client.connect("localhost", username="usuario", password="Laboratorio.Robotica")
-
-    shell = ssh_client.invoke_shell()
-
-    final_command = f'''source /home/usuario/PycharmProjects/pythonProject/venv/bin/activate
-    python /home/usuario/PycharmProjects/pythonProject/testRecaptura.py {id_pallet}
-    '''
-
-    stdin, stdout, stderr = ssh_client.exec_command(final_command)
-
-    # Check for any errors or handle the results as needed
-    # error_message = stderr.read().decode('utf-8')
-    # out_message = stdout.read().decode('utf-8')
-
-    # print(f'Error message: {error_message}')
-    # print(f'Output message: {out_message}')
-
-    ssh_client.close()
+    final_command = f'python3 {SCRIPT_RECAPTURA} {id_pallet}'
+    
+    process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    out, err = process.communicate(final_command.encode('utf-8'))
+    print(out.decode('utf-8'))
+    
+    json_paths = read_paths_file("1")
+    
+    print(f'JSON Paths returned: {json_paths["path"]}')
 
 
 def local_message_pallet_selection(request, id_pallet):
@@ -1027,7 +1040,6 @@ def local_message_pallet_selection(request, id_pallet):
     recapture_thread.start()
 
     return JsonResponse({'Correcto': 'Pallet seleccionado correctamente'})
-
 class EstadoDispositivo:
     def __init__(self):
         self.estado = 'funciona'
