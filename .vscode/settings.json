@@ -11,7 +11,8 @@
             "driver": "MySQL",
             "name": "Ai2",
             "database": "Ai2",
-            "username": "root"
+            "username": "root",
+            "askForPassword": true
         }
     ]
 }

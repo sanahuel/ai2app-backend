@@ -28,8 +28,7 @@ from django.db.models.functions import Substr
 from .serializers import CreateEnsayoSerializer
 from .serializers import PalletsSerializer, PlacasSerializer, PalletPlacasSerializer, DispositivosSerializar, ExperimentosSerializer
 
-
-# Create your views here.INSERT INTO api_dispositivos (IP, modelo, imgsPath)
+#            ----
 
 TIME_ZONE = "Europe/Madrid"
 
@@ -64,7 +63,7 @@ class DispositivoView(APIView):
         dispositivo = Dispositivos.objects.first()
 
         if dispositivo.modelo == 'miniTower':
-            capacidad = 18
+            capacidad = 18 #TODO cambiar . . . .
         else: return JsonResponse({'error': 'Error: Modelo desconocido'})
         
         pallets = Pallets.objects.all()
@@ -79,23 +78,31 @@ class DispositivoView(APIView):
             fechafinal = fechaInicio + datetime.timedelta(minutes=ventanaEntreCapturas*numeroDeCapturas)
             if fechafinal > timezone.now():
                 nExp += 1
-        return JsonResponse({'pallets_disponibles': capacidad-pallets_ocupados, 'pallets_ocupados': pallets_ocupados, 'nExp': nExp})
+
+        data = {
+            'pallets_disponibles': capacidad-pallets_ocupados,
+            'pallets_ocupados': pallets_ocupados,
+            'nExp': nExp
+        }
+
+        return JsonResponse(data)
 
 class DispositivoTareasView(APIView):
     def get(self, request, *args, **kwargs):
         tareas = list(Tareas.objects.filter(estado='pendiente').values_list('fechayHora', 'idExperimentos'))
+        
         formated = []
         for tarea in tareas:
             exp = Experimentos.objects.get(idExperimentos=tarea[1])
             formated.append((tarea[0],exp.color, exp.nombreExperimento))
-        return JsonResponse({'tareas': formated})
+
+        data = {
+            'tareas' : formated
+        }
+
+        return JsonResponse(data)
 
 #       ------Nuevo Ensayo------
-def check_tareas(tareas):
-    # TODO cambiar duacion????
-    duracion = 60 #min
-
-    pass
 
 class NewView(APIView):
     # permission_classes = [IsAuthenticated]
@@ -113,8 +120,8 @@ class NewView(APIView):
             print('/////////////////////////////////////////// lock released ///////////////////////////////////////////')
     
     def get(self, request, *args, **kwargs):
-        print(request.body.decode('utf-8'))
         serializer = self.serializer_class
+
         if self.lock.locked():
             return JsonResponse({'status': 'repeat'})
         else:
@@ -122,29 +129,38 @@ class NewView(APIView):
             get=[]
             capturas = list(Tareas.objects.filter(estado='pendiente').order_by('fechayHora').values_list('fechayHora', 'idExperimentos')) 
             # Si las capturas no están ordenadas cronológicamente el algoritmo del planificador no funcionará
+            
             for i in range(len(capturas)):
                 experimento = Experimentos.objects.filter(idExperimentos=capturas[i][1]).first()
                 get.append((capturas[i][0],experimento.nombreExperimento))
+            
             almacenes = {}
             dispositivo = Dispositivos.objects.first()
             ### TODO Implementar otros dispositivos...
             if dispositivo.modelo == "miniTower":
                 almacenes[1] = [0,0,0,0,0,0,0,0,0]
                 almacenes[2] = [0,0,0,0,0,0,0,0,0]
+            
             pallets  = Pallets.objects.all()
             for pallet in pallets:
                 localizacion = pallet.localizacion
                 almacen = int(localizacion[1])
                 num_pallet = (int(localizacion[4])-1)*9 + int(localizacion[7]) - 1
                 almacenes[almacen][num_pallet] = 1
-            return JsonResponse({'capturas': get, 'almacenes': almacenes})
+            
+            data = {
+                'capturas' : get,
+                'almacenes' : almacenes
+            }
+
+            return JsonResponse(data)
     
     def put(self, request, *args, **kwargs):
         if "release" in request.body.decode('utf-8'):
             self.release_lock()
-        # elif ......
-
+        
         return JsonResponse({'status': 204})
+
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class
         json_data = json.loads(request.body)
@@ -189,11 +205,6 @@ class NewView(APIView):
         ### CHANGES
         changes = json_data['changes']
 
-        ### COMPROBAR SOLAPES
-        # check = check_tareas(tareas)
-        # if check: 
-        #     return JsonResponse({'success': False}) #si hay solapes no crear ensayo
-
         with transaction.atomic():
             ### Experimento
             experimento = Experimentos.objects.create(
@@ -230,9 +241,6 @@ class NewView(APIView):
                 ## Tareas Operativo
                 command = f'TZ={TIME_ZONE} ' + "at {:02d}:{:02d} {:02d} {} {} -f "+ SCRIPT_CAPTURA +" 2>&1 | awk 'END{{print $2}}'"
                 command = command.format(h, m, dia, meses[mes-1], str(año))
-                print(f'===============command============')
-                print(command)
-                print('====================================')
                 output = subprocess.check_output(command, shell=True).decode().strip()
 
                 tarea = Tareas.objects.create(
@@ -275,7 +283,6 @@ class NewView(APIView):
                             tipoPlaca=tipoPlaca,
                         )
 
-            ### Changes TODO idOperativo
             if len(changes) > 0:
                 for change in changes:
                     tarea = Tareas.objects.get(idTareas=change[0])
@@ -306,7 +313,6 @@ class NewView(APIView):
                     tarea.holguraNegativa = change[3]
                     tarea.save()
 
-
             self.release_lock()
             return JsonResponse({'success': True})
 
@@ -333,7 +339,11 @@ class ControlView(View):
                 'porcentaje': (1-(len(tareas_pendientes)+len(tareas_canceladas))/len(tareas_totales)+0.01)*100,
             })
 
-        return JsonResponse({'experimentos':experimentos})
+        data = {
+            'experimentos':experimentos
+        }
+
+        return JsonResponse(data)
 
 class ControlExpView(View):
     global SCRIPT_CAPTURA
@@ -359,24 +369,39 @@ class ControlExpView(View):
                 c[0],
                 len(list(placas_no_canceladas))>0,
             ])
-        print(condiciones_array)
+
         #placas
         placas_array = []
         placas = Placas.objects.filter(idExperimentos= self.kwargs['pk']).values_list('idPlacas', 'cancelada', 'idPallets')
-        for pl in placas:
-            localizacion = Pallets.objects.filter(idPallets= pl[2]).values_list('localizacion', flat=True)[0]
-            placas_array.append([
-                pl[0],
-                pl[1],
-                f'Almacen {localizacion[1]} Cassette {localizacion[4]} Pallet {localizacion[-1]}'
-            ])
+        try:
+            for pl in placas:
+                localizacion = Pallets.objects.filter(idPallets= pl[2]).values_list('localizacion', flat=True)[0]
+                placas_array.append([
+                    pl[0],
+                    pl[1],
+                    f'Almacen {localizacion[1]} Cassette {localizacion[4]} Pallet {localizacion[-1]}'
+                ])
+        except:
+            pass
 
         #capturas
-        capturas = Tareas.objects.filter(estado='pendiente').filter(idExperimentos= self.kwargs['pk']).values_list('fechayHora', 'estado')
-        events = []
-        id = 0
+        current_datetime = datetime.datetime.now()
+        capturas_anteriores = Tareas.objects.filter(idExperimentos= self.kwargs['pk'], fechayHora__lt=current_datetime).values_list('fechayHora', 'estado')
+        capturas = Tareas.objects.filter(idExperimentos= self.kwargs['pk'], fechayHora__gt=current_datetime).values_list('fechayHora', 'estado')
         capturas_otros = Tareas.objects.filter(estado='pendiente').exclude(idExperimentos= self.kwargs['pk']).values_list('fechayHora', 'idExperimentos')
         
+        events = []
+        id = 0
+        for c in capturas_anteriores:
+            events.append({
+                'title': nombreExperimento,
+                'start': c[0],
+                'allDay': False,
+                'color': '#ddd',
+                'editable': False,
+                'id': id,
+            })
+
         for t in capturas:
             if t[1] == 'cancelada':
                 events.append({
@@ -409,7 +434,38 @@ class ControlExpView(View):
             })
             id+=1
             
-        
+        # Resultados
+        if experimento.aplicacion == 'healthspan':
+            current_datetime = datetime.datetime.now()
+            filtered_tareas = Tareas.objects.filter(idExperimentos=self.kwargs['pk'], fechayHora__lt=current_datetime).order_by('fechayHora')
+
+            resultados = {}
+
+            for cond, condid in condiciones:
+                placasCond = Placas.objects.filter(idCondiciones=condid, cancelada=0).values_list('idPlacas', flat=True)
+                if len(placasCond) > 0:
+                    resultados[cond] = {}
+                    for p_id in placasCond:
+                        resultados[cond][p_id] = []
+                        for tarea in filtered_tareas:
+                            
+                            if tarea.cancelada == 1:
+                                pass
+                            elif tarea.estado == 'pendiente':
+                                pass 
+                            else:
+                                result = list(Resultados_healthspan.objects.filter(idPlacas=p_id, idTareas=tarea.idTareas).values_list('modo', flat=True))
+                                resultados[cond][p_id].append(result[0] if result else None)
+
+        elif experimento.aplicacion == 'lifespan':
+            pass
+
+        # en show se envía true o false para cargar las gráficas
+        # si hay una o más tareas ya procesadas sí se cargan
+        tareas_procesadas = Tareas.objects.filter(idExperimentos=self.kwargs['pk'], estado='borrada')
+        if len(list(tareas_procesadas)) > 0: show_resultados=True
+        else: show_resultados=False
+
         data = {
             'nombre':nombreExperimento,
             'proyecto':nombreProyecto,
@@ -420,8 +476,9 @@ class ControlExpView(View):
             'placas': placas_array,
             'capturas': events,
             'color': color,
+            'resultados': resultados,
+            'show': show_resultados,
         }
-        
         
         return JsonResponse(data)
 
@@ -504,24 +561,16 @@ class ControlExpView(View):
 
     def delete(self, request, *args, **kwargs):
         try:
-            #Delete Pallets
-            # idPallets = Placas.objects.filter(idExperimentos=self.kwargs['pk']).values_list('idPallets', flat=True)
-            # for id in idPallets:
-            #     try:
-            #         pallet = Pallets.objects.get(idPallets= id)
-            #         print(pallet)
-            #         pallet.delete()
-            #     except:
-            #         pass
             
             #Delete at job
             idOperativos = Tareas.objects.filter(idExperimentos=self.kwargs['pk']).values_list('idOperativo', flat=True)
             for id in idOperativos:
                 try:
                     output = subprocess.check_output(f'atrm {id}', shell=True)
-                    print(output)
                 except:
                     pass
+            
+            #Delete Tareas
             Tareas.objects.filter(idExperimentos=self.kwargs['pk']).delete()
 
             #Change to borrada
@@ -552,46 +601,73 @@ class ResultView(View):
                 'proyecto': nombreProyecto,
             })
             
-        return JsonResponse({'experimentos':experimentos})
+        data = {
+            'experimentos':experimentos
+        }
+
+        return JsonResponse(data)
 
 class ResultExpView(View):
     def get(self, request, *args, **kwargs):
         experimento = Experimentos.objects.get(idExperimentos=self.kwargs['pk'])
+        nombre = experimento.nombreExperimento
         aplicacion = experimento.aplicacion
+        proyecto = experimento.nombreProyecto
         idcondiciones = Condiciones.objects.filter(idExperimentos=self.kwargs['pk']).values_list('idCondiciones', flat=True)
-        print(aplicacion)
+        tareas = Tareas.objects.filter(idExperimentos=self.kwargs['pk'])
 
-        ## APLICACION = LIFESPAN
+        # APLICACION = LIFESPAN TODO
         if aplicacion == 'lifespan':
-           condiciones = {}
-           placas = {}
-           for idCondicion in idcondiciones:
-            idplacas = Placas.objects.filter(idCondiciones=idCondicion).values_list('idPlacas', flat=True)
-            condiciones[Condiciones.objects.get(idCondiciones=idCondicion).nombreCondicion] = idplacas
-            
-            ####### FILTRAR CONDICIONES CANCELADAS
-            for idPlaca in idplacas:
-                placas[idPlaca] = Resultados_lifespan.objects.filter(idPlacas=idPlaca).values_list('vivos', flat=True)
+            pass
 
-            #######  BUSCAR TABLA RESULTADOS
-            return  JsonResponse({'aplicacion': aplicacion,'condiciones': list(condiciones), 'placas': list(placas)})
-
-        ## APLICACION = HEALTHSPAN
+        # APLICACION = HEALTHSPAN
         if aplicacion == 'healthspan':
-           condiciones = {}
-           placas = {}
-           for idCondicion in idcondiciones:
-            idplacas = Placas.objects.filter(idCondiciones=idCondicion).values_list('idPlacas', flat=True)
-            condiciones[Condiciones.objects.get(idCondiciones=idCondicion).nombreCondicion] = idplacas
-            
-            ####### FILTRAR CONDICIONES CANCELADAS
+            condiciones = {}
+            placas = {}
+            for idCondicion in idcondiciones:
+                idplacas = Placas.objects.filter(idCondiciones=idCondicion).values_list('idPlacas', flat=True)
+                condiciones[Condiciones.objects.get(idCondiciones=idCondicion).nombreCondicion] = idplacas
+
             for idPlaca in idplacas:
                 placas[idPlaca] = {}
-                placas[idPlaca]['cantidadMov'] = Resultados_healthspan.objects.filter(idPlacas=idPlaca).values_list('cantidadMov', flat=True)
-                # otros indicadores. . .
 
-            #######  BUSCAR TABLA RESULTADOS
-            return  JsonResponse({'aplicacion': aplicacion,'condiciones': list(condiciones), 'placas': list(placas)})
+            condiciones = Condiciones.objects.filter(idExperimentos= self.kwargs['pk']).values_list('nombreCondicion', 'idCondiciones')
+            filtered_tareas = Tareas.objects.filter(idExperimentos=self.kwargs['pk']).order_by('fechayHora')
+
+            cantidadMov = {}
+
+            for cond, condid in condiciones:
+                placasCond = Placas.objects.filter(idCondiciones=condid, cancelada=0).values_list('idPlacas', flat=True)
+                if len(placasCond) > 0:
+                    cantidadMov[cond] = {}
+                    for p_id in placasCond:
+                        cantidadMov[cond][p_id] = []
+                        for tarea in filtered_tareas:
+                            
+                            if tarea.cancelada == True:
+                                pass
+                            elif tarea.estado == 'pendiente':
+                                pass 
+                            else:
+                                result = list(Resultados_healthspan.objects.filter(idPlacas=p_id, idTareas=tarea.idTareas).values_list('modo', flat=True))
+                                cantidadMov[cond][p_id].append(result[0] if result else None)
+            
+            resultados = {}
+            resultados['cantidadMov'] = cantidadMov
+
+
+            data = {
+                'aplicacion': aplicacion,
+                'ensayo': nombre,
+                'proyecto': proyecto,
+                'nCapturas': len(tareas),
+                'inicio': tareas[0].fechayHora.strftime("%d/%m/%Y"),
+                'condiciones': list(condiciones), 
+                'placas': list(placas), 
+                'resultados': resultados
+            }
+
+            return  JsonResponse(data)
 
         return JsonResponse({'message':1})
         
@@ -677,8 +753,6 @@ class DispIndividual(APIView):
                 return JsonResponse({'message': 1})
     
         return JsonResponse({'message': 'Error: Entry not found.'})
-
-
 
 class PlanifConfig(APIView):
     def get(self, request, *args, **kwargs):
@@ -1024,13 +1098,13 @@ def run_recapture(id_pallet):
 
     final_command = f'python3 {SCRIPT_RECAPTURA} {id_pallet}'
     
-    process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-    out, err = process.communicate(final_command.encode('utf-8'))
-    print(out.decode('utf-8'))
+    # process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    # out, err = process.communicate(final_command.encode('utf-8'))
+    # print(out.decode('utf-8'))
+    a = 4 # (To be developed)    
+    # json_paths = read_paths_file("1")
     
-    json_paths = read_paths_file("1")
-    
-    print(f'JSON Paths returned: {json_paths["path"]}')
+    # print(f'JSON Paths returned: {json_paths["path"]}')
 
 
 def local_message_pallet_selection(request, id_pallet):
@@ -1940,15 +2014,21 @@ def ssh_stop_cameras(IP):
         shell = client.invoke_shell()
 
         # Execute the commands
-        stdin, stdout, stderr = client.exec_command("ps -la | grep camara | awk '{print $4}'")
-        aux_char = (stdout.read().decode('utf-8'))
-        # print(f"Se me devuelto esto {aux_char}")
+        exec_command = "(ps -la | head -n 1 | tr -s ' ' | awk -v search=PID 'BEGIN{IGNORECASE=1} {for(i=1; i<=NF; i++) if($i == search) print i}')"
+        print("")
+        stdin, stdout, stderr = client.exec_command(exec_command)
+        pos_PID = (stdout.read().decode('utf-8'))
+        new_exec_command = "ps -la | grep camara | awk '{print $" + pos_PID + "}'"
+        stdin, stdout, stderr = client.exec_command(new_exec_command)
+        # stdin, stdout, stderr = client.exec_command("ps -la | grep camara | awk '{print $4}'")
         print("\n\n\nA punto de finalizar el proceso para el apagado de la camara\n\n\n")
+        aux_char = (stdout.read().decode('utf-8'))
+        print(f"Se me devuelto esto {aux_char}")
         stop_string = "sudo kill -9 " + aux_char + "\n"
         print(stop_string)
-        shell.send(stop_string)
+        client.exec_command(stop_string)
         time.sleep(1)
-        shell.send("y\n")
+        client.exec_command("y\n")
         # docker_down_flag = True
         # stdin, stdout, stderr = client.exec_command("docker kill $(docker ps -q)")
 
@@ -2006,15 +2086,21 @@ def ssh_stop_display(IP):
         shell = client.invoke_shell()
 
         # Execute the commands
-        stdin, stdout, stderr = client.exec_command("ps -la | grep display | awk '{print $4}'")
-        aux_char = (stdout.read().decode('utf-8'))
+        exec_command = "(ps -la | head -n 1 | tr -s ' ' | awk -v search=PID 'BEGIN{IGNORECASE=1} {for(i=1; i<=NF; i++) if($i == search) print i}')"
+        print("")
+        stdin, stdout, stderr = client.exec_command(exec_command)
+        pos_PID = (stdout.read().decode('utf-8'))
+        new_exec_command = "ps la | grep display | awk '{print $" + pos_PID + "}'"
+        stdin, stdout, stderr = client.exec_command(new_exec_command)
         # print(f"Se me devuelto esto {aux_char}")
         print("\n\n\nA punto de finalizar el proceso para el apagado del display\n\n\n")
+        aux_char = (stdout.read().decode('utf-8'))
+        print(f"Se me devuelto esto {aux_char}")
         stop_string = "sudo kill -9 " + aux_char + "\n"
         print(stop_string)
-        shell.send(stop_string)
+        client.exec_command(stop_string)
         time.sleep(1)
-        shell.send("y\n")
+        client.exec_command("y\n")
         # docker_down_flag = True
         # stdin, stdout, stderr = client.exec_command("docker kill $(docker ps -q)")
 
@@ -2071,15 +2157,21 @@ def ssh_stop_tower(IP):
         shell = client.invoke_shell()
 
         # Execute the commands
-        stdin, stdout, stderr = client.exec_command("ps -la | grep tower | awk '{print $4}'")
-        aux_char = (stdout.read().decode('utf-8'))
+        exec_command = "(ps -la | head -n 1 | tr -s ' ' | awk -v search=PID 'BEGIN{IGNORECASE=1} {for(i=1; i<=NF; i++) if($i == search) print i}')"
+        print("")
+        stdin, stdout, stderr = client.exec_command(exec_command)
+        pos_PID = (stdout.read().decode('utf-8'))
+        new_exec_command = "ps la | grep tower | awk '{print $" + pos_PID + "}'"
+        stdin, stdout, stderr = client.exec_command(new_exec_command)
         # print(f"Se me devuelto esto {aux_char}")
         print("\n\n\nA punto de finalizar el proceso para el apagado de la torre\n\n\n")
+        aux_char = (stdout.read().decode('utf-8'))
+        print(f"Se me devuelto esto {aux_char}")
         stop_string = "sudo kill -9 " + aux_char + "\n"
         print(stop_string)
-        shell.send(stop_string)
+        client.exec_command(stop_string)
         time.sleep(1)
-        shell.send("y\n")
+        client.exec_command("y\n")
         # docker_down_flag = True
         # stdin, stdout, stderr = client.exec_command("docker kill $(docker ps -q)")
 
