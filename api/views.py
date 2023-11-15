@@ -435,11 +435,12 @@ class ControlExpView(View):
             id+=1
             
         # Resultados
+        resultados = {}
+
         if experimento.aplicacion == 'healthspan':
             current_datetime = datetime.datetime.now()
             filtered_tareas = Tareas.objects.filter(idExperimentos=self.kwargs['pk'], fechayHora__lt=current_datetime).order_by('fechayHora')
 
-            resultados = {}
 
             for cond, condid in condiciones:
                 placasCond = Placas.objects.filter(idCondiciones=condid, cancelada=0).values_list('idPlacas', flat=True)
@@ -483,9 +484,11 @@ class ControlExpView(View):
         return JsonResponse(data)
 
     def put(self, request, *args, **kwargs):
+        print('--- PUT ---')
         json_data = json.loads(request.body)
 
         table = json_data['table']
+        print(table)
 
         if table == 'Placas':
             id = json_data['id']
@@ -517,9 +520,18 @@ class ControlExpView(View):
             try:
                 with transaction.atomic():
                     # 2023-03-03T08:30:00.000Z -> 2023-03-03 08:30:00.000
-                    fecha = id[:-1].replace('T',' ')
-                    fecha_ajustada = fecha[:10] + ' ' + str(int(fecha[10:13])+2) + fecha[13:] # TODO Arreglar zona horaria
-                    tarea = Tareas.objects.get(fechayHora=fecha_ajustada, idExperimentos=self.kwargs['pk'])
+                    # fecha = id[:-1].replace('T',' ')
+                    # fecha_ajustada = fecha[:10] + ' ' + str(int(fecha[10:13])) + fecha[13:] # TODO Arreglar zona horaria
+                    fecha = id[:-1].split('T')[0]
+                    hora = id[:-1].split('T')[1]
+                    año = int(fecha.split('-')[0])
+                    mes = int(fecha.split('-')[1])
+                    dia = int(fecha.split('-')[2])
+                    h = int(hora.split(':')[0])
+                    m = int(hora.split(':')[1])
+
+                    tarea = Tareas.objects.get(fechayHora=str(datetime.datetime(year=año,month=mes,day=dia,hour=h,minute=m)), idExperimentos=self.kwargs['pk'])
+                    print(tarea.idOperativo)
                     output = subprocess.check_output(f'atrm {tarea.idOperativo}', shell=True)
                     print(output)
                     tarea.estado = 'cancelada'
@@ -531,12 +543,12 @@ class ControlExpView(View):
         elif table == 'Tareas_Drag':
             with transaction.atomic():
                 from_date = json_data['from'][:-1].replace('T',' ')
-                to_date = json_data['to'][:-1].replace('T',' ')            
-                tarea = Tareas.objects.filter(estado='pendiente').get(fechayHora=from_date[:10] + ' ' + str(int(from_date[10:13])+2) + from_date[13:])
-                tarea.fechayHora = to_date[:10] + ' ' + str(int(to_date[10:13])+2) + to_date[13:]
-                
+                to_date = json_data['to'][:-1].replace('T',' ')       
+                tarea = Tareas.objects.filter(estado='pendiente').get(fechayHora=from_date[:10] + ' ' + str(int(from_date[10:13])) + from_date[13:])
+                tarea.fechayHora = to_date[:10] + ' ' + str(int(to_date[10:13])) + to_date[13:]
                 # Borrar tarea antigua
                 id_operativo = tarea.idOperativo
+                print(id_operativo)
                 output = subprocess.check_output(f'atrm {id_operativo}', shell=True)
                 print(output)
                 
@@ -556,6 +568,52 @@ class ControlExpView(View):
 
                 tarea.save()
                 return JsonResponse({'message': 'Tarea editada'})
+
+        elif table == 'Tareas_New':
+            with transaction.atomic():
+                # Tarea en el operativo
+                time = json_data['time']
+                fecha = json_data['time'][:-1].split('T')[0]
+                hora = json_data['time'][:-1].split('T')[1]
+                año = int(fecha.split('-')[0])
+                mes = int(fecha.split('-')[1])
+                dia = int(fecha.split('-')[2])
+                h = int(hora.split(':')[0])
+                m = int(hora.split(':')[1])
+                meses = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+                command = "at {:02d}:{:02d} {:02d} {} {} -f "+ SCRIPT_CAPTURA +" 2>&1 | awk 'END{{print $2}}'"
+                command = command.format(h, m, dia, meses[mes-1], str(año))
+                print(command)
+                output = subprocess.check_output(command, shell=True).decode().strip()
+                idOperativo = int(output)
+
+                # Tarea en la BBDD
+                experimento = Experimentos.objects.get(idExperimentos=self.kwargs['pk'])
+                dispositivo = Dispositivos.objects.first()
+                idUsuarios = json_data['userId']
+                tareas = Tareas.objects.filter(idExperimentos=self.kwargs['pk']).values_list('holguraPositiva', 'holguraNegativa')
+                
+                # Como se puede haber movido alguna tarea y por tanto haber cambiado sus holguras, se calculará las medias de todas las tareas del ensayo
+                holguraPositiva = 0
+                holguraNegativa = 0
+                num_tareas = len(tareas)
+                for t in tareas:
+                    holguraPositiva += t[0]
+                    holguraNegativa += t[1]
+                holguraPositiva = holguraPositiva/num_tareas
+                holguraNegativa = holguraNegativa/num_tareas
+
+                tarea = Tareas.objects.create(
+                    idDispositivos = dispositivo,
+                    fechayHora=str(datetime.datetime(year=año,month=mes,day=dia,hour=h,minute=m)), ###h+2 TODO cambiar...zona horaria
+                    idUsuarios_id=idUsuarios,
+                    idExperimentos=experimento,
+                    estado='pendiente',
+                    holguraPositiva=holguraPositiva,
+                    holguraNegativa=holguraNegativa,
+                    cancelada=False,
+                    idOperativo=idOperativo,
+                )
 
         return JsonResponse({'message': 'table not found'})
 
