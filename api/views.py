@@ -70,20 +70,20 @@ class DispositivoView(APIView):
         pallets = Pallets.objects.all()
         pallets_ocupados = len(pallets)
 
-        experimentos = Experimentos.objects.exclude(estado="borrada")
-        nExp = 0
-        for exp in experimentos:
-            fechaInicio = exp.fechaInicio
-            ventanaEntreCapturas = exp.ventanaEntreCapturas
-            numeroDeCapturas = exp.numeroDeCapturas
-            fechafinal = fechaInicio + datetime.timedelta(minutes=ventanaEntreCapturas*numeroDeCapturas)
-            if fechafinal > timezone.now():
-                nExp += 1
+        experimentos = Experimentos.objects.exclude(estado="descargado")
+        # nExp = 0
+        # for exp in experimentos:
+        #     fechaInicio = exp.fechaInicio
+        #     ventanaEntreCapturas = exp.ventanaEntreCapturas
+        #     numeroDeCapturas = exp.numeroDeCapturas
+        #     fechafinal = fechaInicio + datetime.timedelta(minutes=ventanaEntreCapturas*numeroDeCapturas)
+        #     if fechafinal > timezone.now():
+        #         nExp += 1
 
         data = {
             'pallets_disponibles': capacidad-pallets_ocupados,
             'pallets_ocupados': pallets_ocupados,
-            'nExp': nExp
+            'nExp': len(experimentos)
         }
 
         return JsonResponse(data)
