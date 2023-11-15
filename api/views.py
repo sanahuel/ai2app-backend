@@ -24,6 +24,7 @@ from django.utils import timezone
 from django.views import View
 from .models import Experimentos, Tareas, Placas, Condiciones, Resultados_lifespan, Resultados_healthspan, Dispositivos, Pallets
 from django.db.models import Count
+from django.db.models import F, Max, OuterRef, Subquery
 from django.db.models.functions import Substr
 from .serializers import CreateEnsayoSerializer
 from .serializers import PalletsSerializer, PlacasSerializer, PalletPlacasSerializer, DispositivosSerializar, ExperimentosSerializer
@@ -321,7 +322,7 @@ class NewView(APIView):
 
 class ControlView(View):
     def get(self, request, *args, **kwargs):
-        id_experimentos = Tareas.objects.exclude(estado='borrada').values_list('idExperimentos', flat=True).distinct()
+        id_experimentos = Tareas.objects.exclude(estado='borrada').exclude(estado='lanzada').values_list('idExperimentos', flat=True).distinct()
         experimentos = []
         for id in id_experimentos:
             experimento = Experimentos.objects.get(idExperimentos=id)
@@ -645,7 +646,20 @@ class ControlExpView(View):
 
 class ResultView(View):
     def get(self, request, *args, **kwargs):
-        id_experimentos = Tareas.objects.filter(estado='borrada').values_list('idExperimentos', flat=True).distinct()
+        # Como lo hacía antes:
+        # id_experimentos = Tareas.objects.filter(estado='borrada').values_list('idExperimentos', flat=True).distinct()
+        
+        # Como lo hago ahora (mirando si la ultima tarea de cada exp ya ha pasado):
+        # Get the IDs of Experimentos with Tareas having fechayHora in the past
+        ids = Tareas.objects.filter(
+            idExperimentos=OuterRef('idExperimentos'),  # Assuming the field is named experimento_id
+            fechayHora__lte=timezone.now()  # Check if fechayHora is in the past
+        ).values('idExperimentos').annotate(
+            last_tarea_date=Max('fechayHora')
+        ).values_list('idExperimentos', flat=True)
+        # Fetch Experimentos based on filtered IDs
+        id_experimentos = Experimentos.objects.filter(idExperimentos__in=ids).values_list('idExperimentos', flat=True)
+
         experimentos = []
         for id in id_experimentos:
             experimento = Experimentos.objects.get(idExperimentos=id)
