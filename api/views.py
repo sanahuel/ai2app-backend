@@ -33,9 +33,7 @@ from .serializers import PalletsSerializer, PlacasSerializer, PalletPlacasSerial
 
 TIME_ZONE = "Europe/Madrid"
 
-timeout_seconds = 30
-
-code = None
+#            ----
 
 #           --PATHS--
 
@@ -128,12 +126,12 @@ class NewView(APIView):
         else:
             self.acquire_lock()
             get=[]
-            capturas = list(Tareas.objects.filter(estado='pendiente').order_by('fechayHora').values_list('fechayHora', 'idExperimentos')) 
+            capturas = list(Tareas.objects.filter(estado='pendiente').order_by('fechayHora').values_list('fechayHora', 'idExperimentos','idTareas', 'holguraPositiva', 'holguraNegativa')) 
             # Si las capturas no están ordenadas cronológicamente el algoritmo del planificador no funcionará
             
             for i in range(len(capturas)):
                 experimento = Experimentos.objects.filter(idExperimentos=capturas[i][1]).first()
-                get.append((capturas[i][0],experimento.nombreExperimento))
+                get.append((capturas[i][0], experimento.nombreExperimento, capturas[i][2], capturas[i][3], capturas[i][4]))
             
             almacenes = {}
             dispositivo = Dispositivos.objects.first()
@@ -183,13 +181,14 @@ class NewView(APIView):
 
         ### CAPTURA
         fechaInicio = json_data['captura']['fechaInicio']
+        print(fechaInicio)
         ventanaEntreCapturas = json_data['captura']['ventanaEntreCapturas']
         numeroDeCapturas = json_data['captura']['numeroDeCapturas']
         pallets = json_data['captura']['pallets']
         placasPorCondicion = json_data['captura']['placasPorCondicion']
         tareas = json_data['captura']['tareas']
-        fecha = fechaInicio.split(' ')[0]
-        hora = fechaInicio.split(' ')[1]
+        fecha = fechaInicio.split('T')[0]
+        hora = fechaInicio.split('T')[1]
         año = int(fecha.split('-')[0])
         mes = int(fecha.split('-')[1])
         dia = int(fecha.split('-')[2])
@@ -284,9 +283,10 @@ class NewView(APIView):
                             tipoPlaca=tipoPlaca,
                         )
 
+            # Changes
             if len(changes) > 0:
                 for change in changes:
-                    tarea = Tareas.objects.get(idTareas=change[0])
+                    tarea = Tareas.objects.get(idTareas=change[4])
                     
                     # Borrar tarea antigua
                     id_operativo = tarea.idOperativo
@@ -322,7 +322,8 @@ class NewView(APIView):
 
 class ControlView(View):
     def get(self, request, *args, **kwargs):
-        id_experimentos = Tareas.objects.exclude(estado='borrada').exclude(estado='lanzada').values_list('idExperimentos', flat=True).distinct()
+        # Todos los experimentos que aún tengan una tarea pendiente o lanzada (pendiente de procesar)
+        id_experimentos = Tareas.objects.exclude(estado='borrada').exclude(estado='cancelada').values_list('idExperimentos', flat=True).distinct()
         experimentos = []
         for id in id_experimentos:
             experimento = Experimentos.objects.get(idExperimentos=id)
@@ -649,19 +650,32 @@ class ResultView(View):
         # Como lo hacía antes:
         # id_experimentos = Tareas.objects.filter(estado='borrada').values_list('idExperimentos', flat=True).distinct()
         
-        # Como lo hago ahora (mirando si la ultima tarea de cada exp ya ha pasado):
-        # Get the IDs of Experimentos with Tareas having fechayHora in the past
-        ids = Tareas.objects.filter(
-            idExperimentos=OuterRef('idExperimentos'),  # Assuming the field is named experimento_id
-            fechayHora__lte=timezone.now()  # Check if fechayHora is in the past
-        ).values('idExperimentos').annotate(
-            last_tarea_date=Max('fechayHora')
-        ).values_list('idExperimentos', flat=True)
-        # Fetch Experimentos based on filtered IDs
-        id_experimentos = Experimentos.objects.filter(idExperimentos__in=ids).values_list('idExperimentos', flat=True)
+        # Como lo hago ahora (mirando si la ultima tarea de cada exp ya ha pasado y hay alguna que sí ha sido procesada):
+        # Get all idExperimentos from Experimentos
+        experimentos_ids = Experimentos.objects.values_list('idExperimentos', flat=True)
+
+        id_Experimentos = []
+
+        # Loop through each idExperimentos
+        for experimento_id in experimentos_ids:
+            # Check if at least one Tarea has estado field set to "borrada" for the current Experimento
+            has_borrada_tarea = Tareas.objects.filter(
+                idExperimentos=experimento_id,
+                estado="borrada"
+            ).exists()
+            
+            if has_borrada_tarea:
+                # Get the last Tarea's fechayHora for the current Experimento
+                last_tarea = Tareas.objects.filter(
+                    idExperimentos=experimento_id
+                ).order_by('-fechayHora').first()
+
+                # Check if the last Tarea has already passed
+                if last_tarea and last_tarea.fechayHora <= timezone.now():
+                    id_Experimentos.append(experimento_id)
 
         experimentos = []
-        for id in id_experimentos:
+        for id in id_Experimentos:
             experimento = Experimentos.objects.get(idExperimentos=id)
             nombreExperimento = experimento.nombreExperimento
             aplicacion = experimento.aplicacion

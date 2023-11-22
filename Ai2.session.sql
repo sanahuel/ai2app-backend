@@ -1,3 +1,4 @@
+DELETE FROM api_resultados_healthspan;
 DELETE FROM api_placas;
 DELETE FROM api_condiciones;
 DELETE FROM api_pallets;
