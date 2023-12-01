@@ -2,7 +2,7 @@ from django.urls import path
 from . import views
 from django.views.decorators.csrf import csrf_exempt
 from .views import NewView, ControlView, ControlExpView, ResultView, ResultExpView, DispositivoView, DispositivoTareasView
-from .views import DispConfig, PlacasConfig, PlanifConfig, DispIndividual, PlanifIndividual, PlacasIndividual
+from .views import DispConfig, PlacasConfig, PlanifConfig, DispIndividual, PlanifIndividual, PlacasIndividual, IPsConfig, IPsIndividual
 # Local
 from .views import LocalPalletsView, LocalPlacasView, LocalPlacasDetailView, LocalPalletPlacasView, LocalPalletsByAlmacenView, LocalAlmacenesView, LocalCListView, LocalPListView, LocalDispositivosView, LocalExperimentosView, LocalDistrPallet
 from .views import local_image_callback_1, local_image_view_1, local_image_callback_2, local_image_view_2
@@ -23,6 +23,8 @@ urlpatterns = [
     path('config/placas/<int:pk>', PlacasIndividual.as_view()),
     path('config/planif', PlanifConfig.as_view()),
     path('config/planif/<int:pk>', PlanifIndividual.as_view()),
+    path('config/ips', IPsConfig.as_view()),
+    path('config/ips/<int:pk>', IPsIndividual.as_view()),
 
     #       ------Local------
     path('local/dispositivos/', LocalDispositivosView.as_view()),
@@ -65,11 +67,11 @@ urlpatterns = [
     path('local/sensor_msgs/', views.local_sensor_messages),
     path('local/receive_alarm/', views.ros2_data_view),
     path('local/handle_alarm/', views.handle_alarm),
+    path('local/capture_progress/', views.local_capture_progress),
     
     #       ------Local Cámara------
     path('local/image_callback/', local_image_callback_1),
     path('local/image_view/camera1', local_image_view_1),
 
     path('local/image_callback_2/', local_image_callback_2),
-    path('local/image_view/camera2', local_image_view_2),
-]
+    path('local/image_view/camera2', local_image_view_2),]

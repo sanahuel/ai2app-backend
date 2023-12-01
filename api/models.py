@@ -28,6 +28,9 @@ class Experimentos(models.Model):
     color = models.CharField(max_length=45, default='#0646b4')
     gusanosPorCondicion = models.IntegerField(null=True)
     estado = models.CharField(max_length=45, null=False, default='pendiente')
+    temperatura = models.CharField(max_length=45, null=False)
+    humedad = models.CharField(max_length=45, null=False)
+
 
 class Tareas(models.Model):
     idTareas = models.AutoField(primary_key=True)
@@ -40,6 +43,7 @@ class Tareas(models.Model):
     cancelada = models.BooleanField(default=False)
     idDispositivos = models.ForeignKey(Dispositivos,on_delete=models.CASCADE)
     idOperativo = models.IntegerField()
+    duracion = models.IntegerField()
 
 class Condiciones(models.Model):
     idCondiciones = models.AutoField(primary_key=True)

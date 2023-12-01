@@ -1,4 +1,5 @@
 import datetime
+from datetime import timedelta
 import threading
 import json
 import pytz
@@ -88,12 +89,12 @@ class DispositivoView(APIView):
 
 class DispositivoTareasView(APIView):
     def get(self, request, *args, **kwargs):
-        tareas = list(Tareas.objects.filter(estado='pendiente').values_list('fechayHora', 'idExperimentos'))
+        tareas = list(Tareas.objects.filter(estado='pendiente').values_list('fechayHora', 'idExperimentos', 'duracion'))
         
         formated = []
         for tarea in tareas:
             exp = Experimentos.objects.get(idExperimentos=tarea[1])
-            formated.append((tarea[0],exp.color, exp.nombreExperimento))
+            formated.append((tarea[0], exp.color, exp.nombreExperimento, tarea[2]))
 
         data = {
             'tareas' : formated
@@ -126,12 +127,12 @@ class NewView(APIView):
         else:
             self.acquire_lock()
             get=[]
-            capturas = list(Tareas.objects.filter(estado='pendiente').order_by('fechayHora').values_list('fechayHora', 'idExperimentos','idTareas', 'holguraPositiva', 'holguraNegativa')) 
+            capturas = list(Tareas.objects.filter(estado='pendiente').order_by('fechayHora').values_list('fechayHora', 'idExperimentos','idTareas', 'holguraPositiva', 'holguraNegativa', 'duracion')) 
             # Si las capturas no están ordenadas cronológicamente el algoritmo del planificador no funcionará
             
             for i in range(len(capturas)):
                 experimento = Experimentos.objects.filter(idExperimentos=capturas[i][1]).first()
-                get.append((capturas[i][0], experimento.nombreExperimento, capturas[i][2], capturas[i][3], capturas[i][4]))
+                get.append((capturas[i][0], experimento.nombreExperimento, capturas[i][2], capturas[i][3], capturas[i][4], capturas[i][5]))
             
             almacenes = {}
             dispositivo = Dispositivos.objects.first()
@@ -172,6 +173,8 @@ class NewView(APIView):
         idUsuarios = json_data['datos']['userId']
         dispositivo = Dispositivos.objects.first()
         gusanosPorCondicion = json_data['datos']['gusanosPorCondicion']
+        temperatura = json_data['datos']['temperatura']
+        humedad = json_data['datos']['humedad']
 
         ### CONDICIONES
         nCondiciones = json_data['condiciones']['nCondiciones']
@@ -181,7 +184,7 @@ class NewView(APIView):
 
         ### CAPTURA
         fechaInicio = json_data['captura']['fechaInicio']
-        print(fechaInicio)
+        duracion = json_data['captura']['duracion']
         ventanaEntreCapturas = json_data['captura']['ventanaEntreCapturas']
         numeroDeCapturas = json_data['captura']['numeroDeCapturas']
         pallets = json_data['captura']['pallets']
@@ -221,6 +224,8 @@ class NewView(APIView):
                 frecuencia=frecuencia,
                 color=color,
                 gusanosPorCondicion=gusanosPorCondicion,
+                temperatura=temperatura,
+                humedad=humedad
             )
 
             ### Tareas
@@ -253,6 +258,7 @@ class NewView(APIView):
                     holguraNegativa=holguraNegativa,
                     cancelada=False,
                     idOperativo=int(output),
+                    duracion=duracion
                 )
 
             ### Pallets
@@ -388,16 +394,19 @@ class ControlExpView(View):
 
         #capturas
         current_datetime = datetime.datetime.now()
-        capturas_anteriores = Tareas.objects.filter(idExperimentos= self.kwargs['pk'], fechayHora__lt=current_datetime).values_list('fechayHora', 'estado')
-        capturas = Tareas.objects.filter(idExperimentos= self.kwargs['pk'], fechayHora__gt=current_datetime).values_list('fechayHora', 'estado')
-        capturas_otros = Tareas.objects.filter(estado='pendiente').exclude(idExperimentos= self.kwargs['pk']).values_list('fechayHora', 'idExperimentos')
-        
+        capturas_anteriores = Tareas.objects.filter(idExperimentos= self.kwargs['pk'], fechayHora__lt=current_datetime).values_list('fechayHora', 'estado', 'duracion')
+        capturas = Tareas.objects.filter(idExperimentos= self.kwargs['pk'], fechayHora__gt=current_datetime).values_list('fechayHora', 'estado', 'duracion')
+        capturas_otros = Tareas.objects.filter(estado='pendiente').exclude(idExperimentos= self.kwargs['pk']).values_list('fechayHora', 'idExperimentos', 'duracion')
+        duracion = capturas[0][2]
         events = []
         id = 0
         for c in capturas_anteriores:
+            start_date = c[0]
+            minutes_to_add = c[2]
             events.append({
                 'title': nombreExperimento,
                 'start': c[0],
+                'end': start_date + timedelta(minutes=minutes_to_add),
                 'allDay': False,
                 'color': '#ddd',
                 'editable': False,
@@ -405,10 +414,14 @@ class ControlExpView(View):
             })
 
         for t in capturas:
+            start_date = t[0]
+            minutes_to_add = t[2]
+
             if t[1] == 'cancelada':
                 events.append({
                 'title': nombreExperimento,
                 'start': t[0],
+                'end': start_date + timedelta(minutes=minutes_to_add),
                 'allDay': False,
                 'color': '#ddd',
                 'editable': False,
@@ -418,21 +431,25 @@ class ControlExpView(View):
                 events.append({
                 'title': nombreExperimento,
                 'start': t[0],
+                'end': start_date + timedelta(minutes=minutes_to_add),
                 'allDay': False,
                 'color': color,
                 'id': id,
             })
             id+=1
         for t in capturas_otros:
+            start_date = t[0]
+            minutes_to_add = t[2]
+
             nombre = Experimentos.objects.filter(idExperimentos= t[1]).values_list('nombreExperimento', flat=True).first()
             events.append({
                 'title': nombre,
                 'start': t[0],
+                'end': start_date + timedelta(minutes=minutes_to_add),
                 'allDay': False,
                 'color': '#ddd',
                 'editable': False,
                 'id': id,
-
             })
             id+=1
             
@@ -478,6 +495,7 @@ class ControlExpView(View):
             'condiciones': condiciones_array,
             'placas': placas_array,
             'capturas': events,
+            'duracion': duracion,
             'color': color,
             'resultados': resultados,
             'show': show_resultados,
@@ -574,6 +592,7 @@ class ControlExpView(View):
         elif table == 'Tareas_New':
             with transaction.atomic():
                 # Tarea en el operativo
+                duracion = json_data['duracion']
                 time = json_data['time']
                 fecha = json_data['time'][:-1].split('T')[0]
                 hora = json_data['time'][:-1].split('T')[1]
@@ -615,6 +634,7 @@ class ControlExpView(View):
                     holguraNegativa=holguraNegativa,
                     cancelada=False,
                     idOperativo=idOperativo,
+                    duracion=duracion,
                 )
 
         return JsonResponse({'message': 'table not found'})
@@ -991,6 +1011,39 @@ class PlacasIndividual(APIView):
             return JsonResponse({'message': 1})
         return JsonResponse({'error':"Error reading data"})
 
+class IPsConfig(APIView):
+    def get(self, request, *args, **kwargs):
+        with open('./data/ips.json', 'r') as f:
+            data = json.load(f)
+            return JsonResponse(data)
+        
+    def post(self, request, *args, **kwargs):
+        body_unicode = request.body.decode('utf-8')
+
+        with open('./data/ips.json', 'r') as f:
+            existing_data = json.load(f)
+            ips = existing_data.get('ips', [])
+        print(f'--- {ips} ---')
+
+        return JsonResponse({'message':1})
+
+class IPsIndividual(APIView):
+    def delete(self, request, *args, **kwargs):
+        with open('./data/ips.json', 'r') as f:
+            existing_data = json.load(f)
+            ips = existing_data.get('ips', [])
+
+        if 0 <= self.kwargs['pk'] < len(ips):
+            del ips[self.kwargs['pk']]
+        else:
+            print("Index out of range")
+            return JsonResponse({'message':-1})
+
+        with open('./data/ips.json', 'w') as f:
+            json.dump({"ips": ips}, f)
+
+        return JsonResponse({'message':1})
+
 #       ------Token------
 
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -1030,7 +1083,7 @@ class LocalPlacasView(APIView):
         queryset = Placas.objects.all()
         serializer = PlacasSerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
 class LocalExperimentosView(APIView):
     def get(self, request, *args, **kwargs):
         queryset = Experimentos.objects.all()
@@ -1038,7 +1091,7 @@ class LocalExperimentosView(APIView):
         #queryset = queryset.filter(estado__ne = 'descargado')
         serializer = ExperimentosSerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
 class LocalPlacasDetailView(RetrieveAPIView):
     queryset = Placas.objects.all()
     serializer_class = PlacasSerializer
@@ -1059,12 +1112,12 @@ class LocalPalletsByAlmacenView(ListAPIView):
         queryset = sorted(queryset, key=lambda p: local_extract_p_position(p.localizacion))
         queryset = sorted(queryset, key=lambda p: local_extract_c_position(p.localizacion))
         return queryset
-    
+
 class LocalAlmacenesView(ListAPIView):
     def get(self, request):
         a_count = Pallets.objects.annotate(AlmacenesC=Substr('localizacion', 1, 2)).values('AlmacenesC').annotate(count=Count('AlmacenesC')).order_by('AlmacenesC')
         return Response(a_count)
-    
+
 class LocalCListView(ListAPIView):
     def get(self, request, a_number):
         c_values = Pallets.objects.filter(localizacion__startswith=a_number).annotate(c_number=Substr('localizacion', 4, 2)).values('c_number').distinct().order_by('c_number')
@@ -1130,7 +1183,7 @@ def local_switch_pallets(request, dragged_pallet_id, target_pallet_id):
         # Return an error response if the pallets are not found
         response_data = {'success': False, 'message': 'Pallets not found'}
         return Response(response_data)
-    
+
 @require_POST
 @csrf_exempt
 def local_move_pallet_to_empty(request):
@@ -1150,7 +1203,7 @@ def local_move_pallet_to_empty(request):
 
     # Return a JSON response indicating the success of the operation
     return JsonResponse({'success': True})
-    
+
 def local_message_pos_z(request, new_z_position):
 
     data = "ZPos:" + str(new_z_position)
@@ -1163,7 +1216,7 @@ def local_message_pos_z(request, new_z_position):
 
     else:
         return JsonResponse({'Error': 'Posición en \'Z\' no enviada correctamente'})
-    
+
 # def local_message_pallet_selection(request, id_pallet):
 
 #     data = "Selected Pallet: " + str(id_pallet)
@@ -1183,67 +1236,80 @@ def run_recapture(id_pallet):
     global SCRIPT_RECAPTURA
 
     final_command = f'python3 {SCRIPT_RECAPTURA} {id_pallet}'
-    
+
     # process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     # out, err = process.communicate(final_command.encode('utf-8'))
     # print(out.decode('utf-8'))
-    a = 4 # (To be developed)    
+    a = 4 # (To be developed)
     # json_paths = read_paths_file("1")
-    
+
     # print(f'JSON Paths returned: {json_paths["path"]}')
 
 
 def local_message_pallet_selection(request, id_pallet):
 
-    
+
     recapture_thread = threading.Thread(target=run_recapture, args=(id_pallet,))
     recapture_thread.start()
 
     return JsonResponse({'Correcto': 'Pallet seleccionado correctamente'})
+
 class EstadoDispositivo:
     def __init__(self):
         self.estado = 'funciona'
 
     def return_state(self):
         return self.estado
-    
+
     def switch_state(self):
         if self.estado == 'funciona':
             self.estado = 'pausa'
 
         else:
             self.estado = 'funciona'
-    
+
 DispEstado = EstadoDispositivo()
+
+def publish_stop_ros2():
+    # ROS2 command default
+    command_work_space = '''
+    cd /home/usuario/ros2_ws/
+    source install/setup.bash
+    '''
+
+    global ROS2_COMMAND_LINE
+
+    ros2_command = ROS2_COMMAND_LINE + "ros2 run pc_services client pausa --ros-args -p topic_service:='stop'"
+    process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    err, out = process.communicate(ros2_command.encode('utf-8'))
+
+    #print(ros2_command)
+
+    #print("\nPublishing on ROS2\n")
+
+    output_str = out.decode('utf-8')
 
 def local_emergency_stop(request):
 
     global DispEstado
 
-    data = "Performing emergency stop"
-    # url = "http://192.168.1.118:8095/publish/"
-    url = "http://127.0.0.1:8095/publish/"
-    response = requests.post(url, data=data)
+    # if (DispEstado.return_state() == 'funciona'):
+        # DispEstado.switch_state()
+    publish_stop_ros2()
 
-    dispositivo = Dispositivos.objects.first()
 
-    if (DispEstado.return_state() == 'funciona'):
-        DispEstado.switch_state()
+    # else:
+        # DispEstado.switch_state()
+        # dispositivo = Dispositivos.objects.first() # DO nothing
 
-    else:
-        DispEstado.switch_state()
+    return JsonResponse({'Correcto': 'Parada de emergencia correcta.', 'Estado': DispEstado.return_state()})
 
-    if response.status_code == 200:
-        return JsonResponse({'Correcto': 'Parada de emergencia correcta.', 'Estado': DispEstado.return_state()})
 
-    else:
-        return JsonResponse({'Error': 'Mostrando mensaje de error.'})
-    
 def local_estado_dispositivo(request):
 
     global DispEstado
     return JsonResponse({'Estado': DispEstado.return_state()})
-    
+
 def local_get_color_by_idPallets(request, idPallet):
     try:
         placa = Placas.objects.filter(idPallets__idPallets=idPallet).first()
@@ -1275,7 +1341,7 @@ def local_get_color_by_almacen(request, almacen_id):
 
     except Exception as e:
         return JsonResponse({'error': str(e)})
-    
+
 def get_max_position(placas):
     max_rows, max_cols = 0, 0
 
@@ -1331,144 +1397,144 @@ class LocalDistrPallet(APIView):
         result['columnas'] = columnas
 
         return JsonResponse(result)
-    
-@csrf_exempt 
+
+@csrf_exempt
 def local_update_ip(request, ip):
     if request.method == 'POST':
         # Retrieve the instance of the model
         instance = get_object_or_404(Dispositivos, idDispositivos=ip)
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         new_ip = body.get('IP', '')
-        
+
         # Modify the field value
         instance.IP = new_ip
-        
+
         # Save the instance
         instance.save()
-        
+
         # Return a success response
         return JsonResponse({'message': 'IP updated successfully'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_update_imgs_path(request, ip):
     if request.method == 'POST':
         # Retrieve the instance of the model
         instance = get_object_or_404(Dispositivos, idDispositivos=ip)
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         new_imgs_path = body.get('imgsPath', '')
-        
+
         # Modify the field value
         instance.imgsPath = new_imgs_path
-        
+
         # Save the instance
         instance.save()
-        
+
         # Return a success response
         return JsonResponse({'message': 'imgsPath updated successfully'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_update_modelo(request, ip):
     if request.method == 'POST':
         # Retrieve the instance of the model
         instance = get_object_or_404(Dispositivos, idDispositivos=ip)
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         new_modelo = body.get('modelo', '')
-        
+
         # Modify the field value
         instance.Modelo = new_modelo
-        
+
         # Save the instance
         instance.save()
-        
+
         # Return a success response
         return JsonResponse({'message': 'modelo updated successfully'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_update_n_almacenes(request, ip):
     if request.method == 'POST':
         # Retrieve the instance of the model
         instance = get_object_or_404(Dispositivos, idDispositivos=ip)
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         new_n_almacenes = body.get('nAlmacenes', '')
-        
+
         # Modify the field value
         instance.nAlmacenes = new_n_almacenes
-        
+
         # Save the instance
         instance.save()
-        
+
         # Return a success response
         return JsonResponse({'message': 'nAlmacenes updated successfully'})
-    
-    # Return an error response for unsupported methods
-    return JsonResponse({'message': 'Method not allowed'}, status=405) 
 
-@csrf_exempt 
+    # Return an error response for unsupported methods
+    return JsonResponse({'message': 'Method not allowed'}, status=405)
+
+@csrf_exempt
 def local_update_n_cassettes(request, ip):
     if request.method == 'POST':
         # Retrieve the instance of the model
         instance = get_object_or_404(Dispositivos, idDispositivos=ip)
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         new_n_cassettes = body.get('nCassettes', '')
-        
+
         # Modify the field value
         instance.nCassettes = new_n_cassettes
-        
+
         # Save the instance
         instance.save()
-        
+
         # Return a success response
         return JsonResponse({'message': 'nCassettes updated successfully'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_turn_on_rasp(request):
     if request.method == 'POST':
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         ip = body.get('auxRasP', '')
 
         #print(f'\n\n\n /////////// Esta es la IP de encendido: {ip} /////////// \n\n\n')
         print('Connecting to a Raspberry')
-        
+
         # Return a success response
         return JsonResponse({'message': 'Raspberry ON'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_turn_off_rasp(request):
     if request.method == 'POST':
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         ip = body.get('auxRasP', '')
 
         #print(f'\n\n\n /////////// Esta es la IP de apagado: {ip} /////////// \n\n\n')
-        
+
         # Create a client object
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1494,20 +1560,20 @@ def local_turn_off_rasp(request):
 
         # Return a success response
         return JsonResponse({'message': 'Raspberry OFF'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_reboot_rasp(request):
     if request.method == 'POST':
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         ip = body.get('auxRasP', '')
 
         #print(f'\n\n\n /////////// Esta es la IP de reboot: {ip} /////////// \n\n\n')
-        
+
         # Create a client object
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1533,14 +1599,14 @@ def local_reboot_rasp(request):
 
         # Return a success response
         return JsonResponse({'message': 'Rebooting Raspberry'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_stop_dockers(request):
     if request.method == 'POST':
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         ip = body.get('auxRasP', '')
@@ -1570,7 +1636,7 @@ def local_stop_dockers(request):
 
         # Return a success response
         return JsonResponse({'message': 'Dockers Stopped'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
@@ -1583,7 +1649,7 @@ docker_down_flag = False
 def check_docker_processes_camera(IP):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
+
     try:
         # Connect to the raspberry
         client.connect(IP, username="pi", password="raspberry")
@@ -1598,10 +1664,10 @@ def check_docker_processes_camera(IP):
         print(f'Recibo esto: {output}')
         if not output:
             return 0
-            
+
         else:
             return 1
-        
+
     except paramiko.SSHException as e:
         print(f"SSH Exception: {e}")
     except Exception as e:
@@ -1655,19 +1721,19 @@ def ssh_launch_cameras(IP):
             while docker_down_flag != True:
                 # Check if the task is still running
                 aux = check_docker_processes_camera(IP)
-                
+
                 if aux == 0:
                     # docker_down_flag = True
                     print("\n\n\nAbout to turn off cameras\n\n\n")
                     break
-                    
+
                 time.sleep(5)
 
             if not shell.closed:
                 shell.send('\x03')
 
             stdin, stdout, stderr = client.exec_command("exit")
-            
+
         else:
             print('\n\n\nCamera already connected\n\n\n')
             # return 1
@@ -1680,16 +1746,16 @@ def ssh_launch_cameras(IP):
         client.close()
 
 
-@csrf_exempt 
+@csrf_exempt
 def local_turn_on_cam(request):
     if request.method == 'POST':
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         ip = body.get('auxRasP', '')
 
         #print(f'\n\n\n /////////// Esta es la IP de reboot: {ip} /////////// \n\n\n')
-        
+
         # Create a client object
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1708,14 +1774,14 @@ def local_turn_on_cam(request):
 
         # Return a success response
         return JsonResponse({'message': 'nCassettes updated successfully'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_rasp_status(request):
     if request.method == 'POST':
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         ip = body.get('auxRasP', '')
@@ -1743,14 +1809,14 @@ def local_rasp_status(request):
             }
         # print(f'Devuelvo esto {response_data}')
         return JsonResponse(response_data)
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed', 'status': 'unreachable'}, status=405)
 
 def check_docker_processes_display(IP):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
+
     try:
         # Connect to the raspberry
         client.connect(IP, username="pi", password="raspberry")
@@ -1765,10 +1831,10 @@ def check_docker_processes_display(IP):
         print(f'Recibo esto: {output}')
         if not output:
             return 0
-            
+
         else:
             return 1
-        
+
     except paramiko.SSHException as e:
         print(f"SSH Exception: {e}")
     except Exception as e:
@@ -1821,19 +1887,19 @@ def ssh_launch_display(IP):
             while docker_down_flag != True:
                 # Check if the task is still running
                 aux = check_docker_processes_display(IP)
-                
+
                 if aux == 0:
                     # docker_down_flag = True
                     print("\n\n\nAbout to turn off display\n\n\n")
                     break
-                    
+
                 time.sleep(5)
 
             if not shell.closed:
                 shell.send('\x03')
 
             stdin, stdout, stderr = client.exec_command("exit")
-            
+
         else:
             print('\n\n\nDisplay already connected\n\n\n')
             # return 1
@@ -1845,16 +1911,16 @@ def ssh_launch_display(IP):
     finally:
         client.close()
 
-@csrf_exempt 
+@csrf_exempt
 def local_turn_display_on(request):
     if request.method == 'POST':
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         ip = body.get('auxRasP', '')
 
         #print(f'\n\n\n /////////// Esta es la IP de reboot: {ip} /////////// \n\n\n')
-        
+
         # Create a client object
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1873,14 +1939,14 @@ def local_turn_display_on(request):
 
         # Return a success response
         return JsonResponse({'message': 'nCassettes updated successfully'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
 def check_docker_processes_tower(IP):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
+
     try:
         # Connect to the raspberry
         client.connect(IP, username="pi", password="raspberry")
@@ -1895,10 +1961,10 @@ def check_docker_processes_tower(IP):
         print(f'Recibo esto: {output}')
         if not output:
             return 0
-            
+
         else:
             return 1
-        
+
     except paramiko.SSHException as e:
         print(f"SSH Exception: {e}")
     except Exception as e:
@@ -1951,19 +2017,19 @@ def ssh_launch_tower(IP):
             while docker_down_flag != True:
                 # Check if the task is still running
                 aux = check_docker_processes_tower(IP)
-                
+
                 if aux == 0:
                     # docker_down_flag = True
                     print("\n\n\nAbout to turn off tower\n\n\n")
                     break
-                    
+
                 time.sleep(5)
 
             if not shell.closed:
                 shell.send('\x03')
 
             stdin, stdout, stderr = client.exec_command("exit")
-            
+
         else:
             print('\n\n\nTower already connected\n\n\n')
             # return 1
@@ -1975,16 +2041,16 @@ def ssh_launch_tower(IP):
     finally:
         client.close()
 
-@csrf_exempt 
+@csrf_exempt
 def local_turn_tower_on(request):
     if request.method == 'POST':
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         ip = body.get('auxRasP', '')
 
         #print(f'\n\n\n /////////// Esta es la IP de reboot: {ip} /////////// \n\n\n')
-        
+
         # Create a client object
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -2003,13 +2069,13 @@ def local_turn_tower_on(request):
 
         # Return a success response
         return JsonResponse({'message': 'tower turned on successfully'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
 import copy
 
-# @csrf_exempt 
+# @csrf_exempt
 # def local_docker_processes(request):
 #     if request.method == 'POST':
 #         # Retrieve the new imgsPath value from the request body
@@ -2044,11 +2110,11 @@ import copy
 
 #             # Return a success response
 #             return JsonResponse({'processes': str(val)})
-    
+
 #     # Return an error response for unsupported methods
 #     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_docker_processes(request):
     if request.method == 'POST':
         # Retrieve the new imgsPath value from the request body
@@ -2126,7 +2192,7 @@ def ssh_stop_cameras(IP):
         client.close()
 
 
-@csrf_exempt 
+@csrf_exempt
 def local_turn_camera_off(request):
     if request.method == 'POST':
         # Retrieve the new imgsPath value from the request body
@@ -2152,7 +2218,7 @@ def local_turn_camera_off(request):
 
             # Return a success response
             return JsonResponse({'processes': str(val)})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
@@ -2197,7 +2263,7 @@ def ssh_stop_display(IP):
     finally:
         client.close()
 
-@csrf_exempt 
+@csrf_exempt
 def local_turn_display_off(request):
     if request.method == 'POST':
         # Retrieve the new imgsPath value from the request body
@@ -2223,7 +2289,7 @@ def local_turn_display_off(request):
 
             # Return a success response
             return JsonResponse({'processes': str(val)})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
@@ -2268,7 +2334,7 @@ def ssh_stop_tower(IP):
     finally:
         client.close()
 
-@csrf_exempt 
+@csrf_exempt
 def local_turn_tower_off(request):
     if request.method == 'POST':
         # Retrieve the new imgsPath value from the request body
@@ -2294,7 +2360,7 @@ def local_turn_tower_off(request):
 
             # Return a success response
             return JsonResponse({'processes': str(val)})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
@@ -2315,48 +2381,76 @@ global_sensor_msgs = {
     'fc_altura_bot_2': False,
 
     'temperatura': 0.0,
+    'humitat': 0.0,
 
     'palet_a': False,
     'palet_b': False,
 
     'palet_descolocat_1': 0,
     'palet_descolocat_2': 0,
+
+    'barrera_a1': 0,
+    'barrera_a2': 0,
+    'barrera_b1': 0,
+    'barrera_b2': 0,
 }
 
-@csrf_exempt 
+@csrf_exempt
 def local_sensor_messages(request):
     if request.method == 'POST':
         global global_sensor_msgs
         # Retrieve the info from the message
-        body = json.loads(request.body)
+        # print('\n\nAntes\n\n')
+        # body = json.loads(request.data)
 
-        global_sensor_msgs['fc_garra_a1'] = body.get('fc_garra_a1', '')
-        global_sensor_msgs['fc_garra_a2'] = body.get('fc_garra_a2', '')
-        global_sensor_msgs['fc_garra_b1'] = body.get('fc_garra_b1', '')
-        global_sensor_msgs['fc_garra_b2'] = body.get('fc_garra_b2', '')
+        # data = request.POST.get('data', '')
+        # print(f'\n\nData: \n{data}\n\n')
+        global_sensor_msgs['fc_garra_a1'] = request.POST.get('fc_garra_a1', '')
+        global_sensor_msgs['fc_garra_a2'] = request.POST.get('fc_garra_a2', '')
+        global_sensor_msgs['fc_garra_b1'] = request.POST.get('fc_garra_b1', '')
+        global_sensor_msgs['fc_garra_b2'] = request.POST.get('fc_garra_b2', '')
 
-        global_sensor_msgs['altura1'] = body.get('altura1', '')
-        global_sensor_msgs['altura2'] = body.get('altura2', '')
+        global_sensor_msgs['altura1'] =  "{:.1f}".format(round(float(request.POST.get('altura1', ''))))
+        global_sensor_msgs['altura2'] = "{:.1f}".format(round(float(request.POST.get('altura2', ''))))
 
-        global_sensor_msgs['fc_altura_top_1'] = body.get('fc_altura_top_1', '')
-        global_sensor_msgs['fc_altura_top_2'] = body.get('fc_altura_top_2', '')
-        global_sensor_msgs['fc_altura_bot_1'] = body.get('fc_altura_bot_1', '')
-        global_sensor_msgs['fc_altura_bot_2'] = body.get('fc_altura_bot_2', '')
+        global_sensor_msgs['fc_altura_top_1'] = request.POST.get('fc_altura_top_1', '')
+        global_sensor_msgs['fc_altura_top_2'] = request.POST.get('fc_altura_top_2', '')
+        global_sensor_msgs['fc_altura_bot_1'] = request.POST.get('fc_altura_bot_1', '')
+        global_sensor_msgs['fc_altura_bot_2'] = request.POST.get('fc_altura_bot_2', '')
 
-        global_sensor_msgs['temperatura'] = body.get('temperatura', '')
+        global_sensor_msgs['temperatura'] = "{:.2f}".format(round(float(request.POST.get('temperatura', '')), 2))
+        global_sensor_msgs['humitat'] = "{:.2f}".format(round(float(request.POST.get('humitat', '')), 2))
 
-        global_sensor_msgs['palet_a'] = body.get('palet_a', '')
-        global_sensor_msgs['palet_b'] = body.get('palet_b', '')
+        global_sensor_msgs['palet_a'] = request.POST.get('palet_a', '')
+        global_sensor_msgs['palet_b'] = request.POST.get('palet_b', '')
 
-        global_sensor_msgs['palet_descolocat_1'] = body.get('palet_descolocat_1', '')
-        global_sensor_msgs['palet_descolocat_2'] = body.get('palet_descolocat_2', '')
+        global_sensor_msgs['palet_descolocat_1'] = request.POST.get('palet_descolocat_1', '')
+        global_sensor_msgs['palet_descolocat_2'] = request.POST.get('palet_descolocat_2', '')
 
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        global_sensor_msgs['barrera_a1'] = request.POST.get('barrera_a1', '')
+        global_sensor_msgs['barrera_a2'] = request.POST.get('barrera_a2', '')
+        global_sensor_msgs['barrera_b1'] = request.POST.get('barrera_b1', '')
+        global_sensor_msgs['barrera_b2'] = request.POST.get('barrera_b2', '')
+
+        exp = Experimentos.objects.exclude(estado="descargado")
+
+        for experimento in exp:
+
+            if experimento.temperatura:
+                tempDB = (experimento.temperatura).split("-")
+                realTemp = float(global_sensor_msgs['temperatura'])
+                if (realTemp < tempDB[0]) or (realTemp > tempDB[1]):
+                    publish_alarm_ros2("Temperatura fuera de rango.", ("-11"))
+
+            if experimento.humedad:
+                humDB = (experimento.humedad).split("-")
+                realHum = float(global_sensor_msgs['humitat'])
+                if (realHum < realHum[0]) or (realHum > realHum[1]):
+                    publish_alarm_ros2("Humedad fuera de rango.", ("-12"))
 
         # Return a success response
         return JsonResponse({'status': 200})
-    
+
     elif request.method == 'GET':
         response_data = {
             'fc_garra_a1': global_sensor_msgs['fc_garra_a1'],
@@ -2373,27 +2467,33 @@ def local_sensor_messages(request):
             'fc_altura_bot_2': global_sensor_msgs['fc_altura_bot_2'],
 
             'temperatura': global_sensor_msgs['temperatura'],
+            'humitat': global_sensor_msgs['humitat'],
 
             'palet_a': global_sensor_msgs['palet_a'],
             'palet_b': global_sensor_msgs['palet_b'],
 
             'palet_descolocat_1': global_sensor_msgs['palet_descolocat_1'],
             'palet_descolocat_2': global_sensor_msgs['palet_descolocat_2'],
+
+            'barrera_a1': global_sensor_msgs['barrera_a1'],
+            'barrera_a2': global_sensor_msgs['barrera_a2'],
+            'barrera_b1': global_sensor_msgs['barrera_b1'],
+            'barrera_b2': global_sensor_msgs['barrera_b2'],
         }
         return JsonResponse(response_data)
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-@csrf_exempt 
+@csrf_exempt
 def local_update_experimentos_estado(request, idExperimento):
     if request.method == 'POST':
         # Retrieve the instance of the model
         instance = get_object_or_404(Experimentos, idExperimentos=idExperimento)
-        
+
         # Retrieve the new imgsPath value from the request body
         body = json.loads(request.body)
         nEstado = body.get('nEstado', '')
-        
+
         # Modify the field value
         instance.estado = nEstado
 
@@ -2401,21 +2501,21 @@ def local_update_experimentos_estado(request, idExperimento):
             placas = Placas.objects.filter(idExperimentos = idExperimento)
             id_pallets = list(placas.values_list('idPallets', flat=True).distinct())
             Placas.objects.filter(idExperimentos = idExperimento).update(idPallets=None)
-            print(id_pallets)
+            # print(id_pallets)
             pallets_list = []
             for idPal in id_pallets:
                 pallets = Pallets.objects.filter(idPallets = idPal)
                 pallets_list.append(pallets)
                 Pallets.objects.filter(idPallets = idPal).delete()
 
-            print(pallets_list[0])
-        
+            # print(pallets_list[0])
+
         # Save the instance
         instance.save()
-        
+
         # Return a success response
         return JsonResponse({'message': 'nEstado updated successfully'})
-    
+
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
@@ -2514,74 +2614,92 @@ MAX_VALOR = 30
 MIN_VALOR = 0
 
 class Alarm:
-    def __init__(self, id, message, type_alarm):
+    def __init__(self, id, message, type_alarm, resp_user, solved, alm_state):
         self.id = id
         self.message = message
         self.type_alarm = type_alarm
+        self.resp_user = resp_user
+        self.solved = solved
+        self.alm_state = alm_state
 
     def to_json(self):
         alarm_dict = {
             "id": self.id,
             "message": self.message,
-            "critical": self.type_alarm
+            "critical": self.type_alarm,
+            "resp_user": self.resp_user,
+            "solved": self.solved,
+            "alm_state": self.alm_state,
         }
-        
+
         return json.dumps(alarm_dict)
+
+def return_alarm_ros2(alarm):
+    # ROS2 command default
+    command_work_space = '''
+    cd /home/houston/ros2_ws/
+    source install/setup.bash
+    '''
+
+    global ROS2_COMMAND_LINE
+
+    ros2_command = ROS2_COMMAND_LINE + f'''ros2 run alarm_sender publisher_node --ros-args -p type_alarm:="{str(alarm.type_alarm)}" -p message:='"{str(alarm.message)}"' -p id_alarm:="{str(alarm.id)}" -p resp_usuario:="True" -p solved:="{str(alarm.solved)}" -p estado:="{str(alarm.alm_state)}"'''
+    process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    err, out = process.communicate(ros2_command.encode('utf-8'))
+
+    #print(ros2_command)
+
+    #print("\nPublishing on ROS2\n")
+
+    output_str = out.decode('utf-8')
+
+def publish_alarm_ros2(text_alarm, id_alarm):
+    global ROS2_COMMAND_LINE
+
+    ros2_command = ROS2_COMMAND_LINE + f'''ros2 run alarm_sender task_publisher --ros-args -p type_alarm:="False" -p message:='"{str(text_alarm)}"' -p id_alarm:="{str(id_alarm)}" -p resp_usuario:="True" -p solved:="False" -p estado:="Alarma de arranque"'''
+    process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    err, out = process.communicate(ros2_command.encode('utf-8'))
+
+
+
+    # print("\nPublishing on ROS2\n")
+
+    output_str = out.decode('utf-8')
+
+    # print(output_str)
 
 class ContainerAlarm:
     def __init__(self):
         self.condition = threading.Condition()
-        self.contador = 0
-        self.vect = [None] * MAX_VALOR
-        self.bufIN = 0
-        self.bufOUT = 0
+        self.alarms = []
 
     def put_item(self, alarm):
         with self.condition:
-
-            while self.contador == MAX_VALOR:
-                self.condition.wait()
-
-            self.vect[self.bufIN] = alarm
-
-            if (self.bufIN < MAX_VALOR - 1):
-                self.bufIN += 1
-
-            else:
-                self.bufIN = 0
-
-            self.contador += 1
+            self.alarms.append(alarm)
             self.condition.notify_all()
 
-    def get_item(self):
+    def get_items(self):
         with self.condition:
+            return self.alarms
 
-            alarm = self.vect[self.bufOUT]
-            return alarm
-        
-    def acknowledge_alarm(self):
+    def acknowledge_alarm(self, alarm_id):
         with self.condition:
-            
-            while self.contador == MIN_VALOR:
-                #self.condition.wait()
-                return
-
-            alarm = self.vect[self.bufOUT]
-
-            if (self.bufOUT < MAX_VALOR - 1):
-                self.bufOUT += 1
-
-            else:
-                self.bufOUT = 0
-
-            self.contador -= 1
-            self.condition.notify_all()
-            return alarm
+            for alarm in self.alarms:
+                if alarm.id == alarm_id:
+                    self.alarms.remove(alarm)
+                    auxPattern = re.search("Tarea", alarm.message, re.I)
+                    tempPattern = re.search("Temperatura", alarm.message, re.I)
+                    humPattern = re.search("Humedad", alarm.message, re.I)
+                    if ((not auxPattern) and (not tempPattern) and (not humPattern)) or (int(alarm.id) >= 0):
+                        return_alarm_ros2(alarm)
+                        print("returning")
+                    self.condition.notify_all()
+                    return alarm
+            return None
 
     def read_items(self):
         with self.condition:
-            self.condition.notify_all()
-            return self.contador
+            return len(self.alarms)
 
 contenedorAlarma = ContainerAlarm()
 
@@ -2600,40 +2718,61 @@ def ros2_data_view(request):
         data_text = request.POST.get('alarma', '')
         data_id = request.POST.get('id', '')
         data_critical = request.POST.get('critical', '')
-        alarma = Alarm(data_id, data_text, data_critical)
+        data_resp_user = request.POST.get('resp_usuario', '')
+        data_solved= request.POST.get('solved', '')
+        data_estado = request.POST.get('estado', '')
+        alarma = Alarm(data_id, data_text, data_critical, data_resp_user, data_solved, data_estado)
         info_alarma = data_text
 
         # put_alarm = Alarm(data.interfaces.msg.AlarmsMsgs.id_alarma, data.interfaces.msg.AlarmsMsgs.alarma, data.interfaces.msg.AlarmsMsgs.critical)
-        print(f'I received this alarm: {alarma}')
+        #print(f'I received this alarm: {alarma}')
         # print(f'This is the put alarm: {put_alarm}')
 
-        # Send email
-        subject = 'Alarm Notification'
-        message = f'An alarm has been triggered. Alarm information: {info_alarma}'
-        from_email = 'alarm.sender@outlook.com'  # Set the from_email if not using DEFAULT_FROM_EMAIL in settings
-        recipient_list = ['elzaka81@gmail.com']  # Add the recipient email address
+        flag1 = False
+        listAlms = contenedorAlarma.get_items()
 
-        # Use Django's send_mail function to send the email
-        send_mail(subject, message, from_email, recipient_list)
-        # print(f'I received this alarm: {data}')
-        contenedorAlarma.put_item(alarma)
+        for alm in listAlms:
+            if (alm.id == alarma.id) and (alarma.estado == "solucionada"):
+                flag1 = True
 
-        # Send SSE event to connected clients
-        # send_event('ros2_events', 'message', str(data))
+        if flag1:
+            contenedorAlarma.acknowledge_alarm(alarma.id)
+
+        else:
+            contenedorAlarma.put_item(alarma)
+
+        try:
+            # Send email
+            subject = 'Alarm Notification'
+            message = f'An alarm has been triggered. Alarm information: {info_alarma}'
+            from_email = 'alarm.sender@outlook.com'  # Set the from_email if not using DEFAULT_FROM_EMAIL in settings
+            recipient_list = ['elzaka81@gmail.com']  # Add the recipient email address
+
+            # Use Django's send_mail function to send the email
+            send_mail(subject, message, from_email, recipient_list)
+            # print(f'I received this alarm: {data}')
+
+            # Send SSE event to connected clients
+            # send_event('ros2_events', 'message', str(data))
+        except Exception as e:
+            print(f'Error occurred: {e}')
         return HttpResponse(status=200)
 
     elif request.method == 'GET':
-        return JsonResponse({'info': info_alarma}) 
-    
+        return JsonResponse({'info': info_alarma})
+
 @csrf_exempt
 def handle_alarm(request):
-    
+
     global contenedorAlarma
 
     if request.method == 'POST':
-        data = request.POST.get('data', '')
+        # body = request.POST.get('body', '')
+        body = request.body
+        body = json.loads(body)
+        id_alarma = str(body.get('valor'))
 
-        contenedorAlarma.acknowledge_alarm()
+        contenedorAlarma.acknowledge_alarm(id_alarma)
 
         # Send SSE event to connected clients
         # send_event('ros2_events', 'message', str(data))
@@ -2642,6 +2781,7 @@ def handle_alarm(request):
     elif request.method == 'GET':
 
         dato = contenedorAlarma.read_items()
+        lista2 = []
         if dato == 0:
             itemsAl = {
                 "id": -1,
@@ -2650,7 +2790,50 @@ def handle_alarm(request):
             }
             itemsAl = json.dumps(itemsAl)
         else:
-            itemsAl = contenedorAlarma.get_item().to_json()
-        # itemsAl = json.dumps(itemsAl)
-        # print(f'\n\n\nESTE ES EL ITEM DENTRO DE LA ALARMA {itemsAl}\n\n\n')
-        return JsonResponse({'dato': dato, 'alarma': itemsAl}) 
+            lista = contenedorAlarma.get_items()
+            for item in lista:
+                auxVal = item.to_json()
+                lista2.append(auxVal)
+
+        return JsonResponse({'dato': dato, 'alarma': lista2})
+
+from django.core.serializers import serialize
+
+@csrf_exempt
+def local_capture_progress(request):
+
+    if request.method == 'POST':
+        # body = request.POST.get('body', '')
+        body = request.body
+        body = json.loads(body)
+        id_alarma = str(body.get('valor'))
+
+        contenedorAlarma.acknowledge_alarm(id_alarma)
+
+        # Send SSE event to connected clients
+        # send_event('ros2_events', 'message', str(data))
+        return HttpResponse(status=200)
+
+    elif request.method == 'GET':
+
+        tar = Tareas.objects.filter(fechayHora__lt=timezone.now())
+
+        if tar.exists():
+
+            #last_task = tar.order_by('-fechayHora')[:1]
+            last_task = tar.order_by('-fechayHora')[:1]
+            #serialized_data = serialize('json', last_task)
+            #return JsonResponse(serialized_data, safe=False)
+            print(last_task[0].fechayHora)
+
+            if "lanzada" in last_task[0].estado:
+                state = (last_task[0].estado).split("-")
+                state = state[1]
+                return JsonResponse({'is_capturing': True, 'percentage': state})
+            else:
+                return JsonResponse({'is_capturing': False, 'percentage': "0%"})
+            #serialized_data = serialize('json', last_task)
+            #return JsonResponse(serialized_data, safe=False)
+
+        return JsonResponse({'is_capturing': False, 'percentage': "0%"})
+
