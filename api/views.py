@@ -54,6 +54,7 @@ def read_json(key):
 
 SCRIPT_CAPTURA = read_json("captura")
 SCRIPT_RECAPTURA = read_json("recaptura")
+ROS2_COMMAND_LINE = read_json("ros")
 
 #           --PLANIFICADOR--
 #       ------Dispositivo------

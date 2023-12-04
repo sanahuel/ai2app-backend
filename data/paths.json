@@ -1,4 +1,5 @@
 {
     "captura": "/home/usuario/Escritorio/ai2app-backend/dummy.py",
-    "recaptura": "/home/usuario/Escritorio/ai2app-backend/dummy.py"
+    "recaptura": "/home/usuario/Escritorio/ai2app-backend/dummy.py",
+    "ros2":"cd /home/houston/ros2_ws/\nsource install/setup.bash\n"
 }
