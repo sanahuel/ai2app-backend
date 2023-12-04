@@ -397,7 +397,12 @@ class ControlExpView(View):
         capturas_anteriores = Tareas.objects.filter(idExperimentos= self.kwargs['pk'], fechayHora__lt=current_datetime).values_list('fechayHora', 'estado', 'duracion')
         capturas = Tareas.objects.filter(idExperimentos= self.kwargs['pk'], fechayHora__gt=current_datetime).values_list('fechayHora', 'estado', 'duracion')
         capturas_otros = Tareas.objects.filter(estado='pendiente').exclude(idExperimentos= self.kwargs['pk']).values_list('fechayHora', 'idExperimentos', 'duracion')
-        duracion = capturas[0][2]
+        if len(capturas)>0:
+            duracion = capturas[0][2]
+        elif len(capturas_anteriores)>0:
+            duracion = capturas_anteriores[0][2]
+        else:
+            duracion = 30
         events = []
         id = 0
         for c in capturas_anteriores:
