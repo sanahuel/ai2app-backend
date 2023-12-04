@@ -1070,6 +1070,7 @@ class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
 
 
+
 #           --LOCAL--
 class LocalDispositivosView(APIView):
     def get(self, request, *args, **kwargs):
@@ -2403,7 +2404,7 @@ global_sensor_msgs = {
 @csrf_exempt
 def local_sensor_messages(request):
     if request.method == 'POST':
-        global global_sensor_msgs
+        global global_sensor_msgs, ContainerAlarm
         # Retrieve the info from the message
         # print('\n\nAntes\n\n')
         # body = json.loads(request.data)
@@ -2439,19 +2440,37 @@ def local_sensor_messages(request):
 
         exp = Experimentos.objects.exclude(estado="descargado")
 
+        listAlms = contenedorAlarma.get_items()
+
+        flag1 = True
+        flag2 = True
+
+        for alm in listAlms:
+            if (alm.id == "-11"):
+                flag1 = False
+                #print("\n\n\n-11\n\n\n")
+            elif (alm.id == "-12"):
+                flag2 = False
+                #print("\n\n\n-12\n\n\n")
+
+        #print(f"\n\n{flag1} {flag2}\n\n")
+
         for experimento in exp:
 
             if experimento.temperatura:
                 tempDB = (experimento.temperatura).split("-")
                 realTemp = float(global_sensor_msgs['temperatura'])
-                if (realTemp < tempDB[0]) or (realTemp > tempDB[1]):
-                    publish_alarm_ros2("Temperatura fuera de rango.", ("-11"))
+
+                if (realTemp < float(tempDB[0])) or (realTemp > float(tempDB[1])):
+                    if flag1:
+                        publish_alarm_ros2("Temperatura fuera de rango.", ("-11"))
 
             if experimento.humedad:
                 humDB = (experimento.humedad).split("-")
-                realHum = float(global_sensor_msgs['humitat'])
-                if (realHum < realHum[0]) or (realHum > realHum[1]):
-                    publish_alarm_ros2("Humedad fuera de rango.", ("-12"))
+                realHum = float(((global_sensor_msgs['humitat']).split("%"))[0])
+                if (realHum < float(humDB[0])) or (realHum > float(humDB[1])):
+                    if flag2:
+                        publish_alarm_ros2("Humedad fuera de rango.", ("-12"))
 
         # Return a success response
         return JsonResponse({'status': 200})
@@ -2737,7 +2756,7 @@ def ros2_data_view(request):
         listAlms = contenedorAlarma.get_items()
 
         for alm in listAlms:
-            if (alm.id == alarma.id) and (alarma.estado == "solucionada"):
+            if (alm.id == alarma.id) and (alarma.alm_state == "solucionada"):
                 flag1 = True
 
         if flag1:
@@ -2841,4 +2860,3 @@ def local_capture_progress(request):
             #return JsonResponse(serialized_data, safe=False)
 
         return JsonResponse({'is_capturing': False, 'percentage': "0%"})
-
