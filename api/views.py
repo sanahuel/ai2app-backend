@@ -690,20 +690,20 @@ class ResultView(View):
         # Loop through each idExperimentos
         for experimento_id in experimentos_ids:
             # Check if at least one Tarea has estado field set to "borrada" for the current Experimento
-            has_borrada_tarea = Tareas.objects.filter(
-                idExperimentos=experimento_id,
-                estado="borrada"
-            ).exists()
+            # has_borrada_tarea = Tareas.objects.filter(
+            #     idExperimentos=experimento_id,
+            #     estado="borrada"
+            # ).exists()
             
-            if has_borrada_tarea:
+            # if has_borrada_tarea:
                 # Get the last Tarea's fechayHora for the current Experimento
-                last_tarea = Tareas.objects.filter(
-                    idExperimentos=experimento_id
-                ).order_by('-fechayHora').first()
+            last_tarea = Tareas.objects.filter(
+                idExperimentos=experimento_id
+            ).order_by('-fechayHora').first()
 
                 # Check if the last Tarea has already passed
-                if last_tarea and last_tarea.fechayHora <= timezone.now():
-                    id_Experimentos.append(experimento_id)
+            if last_tarea and last_tarea.fechayHora <= timezone.now():
+                id_Experimentos.append(experimento_id)
 
         experimentos = []
         for id in id_Experimentos:
