@@ -329,8 +329,13 @@ class NewView(APIView):
 
 class ControlView(View):
     def get(self, request, *args, **kwargs):
-        # Todos los experimentos que aún tengan una tarea pendiente o lanzada (pendiente de procesar)
-        id_experimentos = Tareas.objects.exclude(estado='borrada').exclude(estado='cancelada').values_list('idExperimentos', flat=True).distinct()
+        # Antes => Todos los experimentos que aún tengan una tarea pendiente o lanzada (pendiente de procesar)
+        # id_experimentos = Tareas.objects.exclude(estado='borrada').exclude(estado='cancelada').values_list('idExperimentos', flat=True).distinct()
+
+        # Ahora => Solo los experimentos que tengan su ultima tarea (da igual el estado) por delante...
+        current_time = timezone.now()
+        id_experimentos = Tareas.objects.filter(fechayHora__gt=current_time).values_list('idExperimentos', flat=True).distinct()
+
         experimentos = []
         for id in id_experimentos:
             experimento = Experimentos.objects.get(idExperimentos=id)
