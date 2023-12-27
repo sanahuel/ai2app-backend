@@ -50,6 +50,9 @@ urlpatterns = [
     path('local/update_modelo/<int:ip>/', views.local_update_modelo),
     path('local/update_n_almacenes/<int:ip>/', views.local_update_n_almacenes),
     path('local/update_n_cassettes/<int:ip>/', views.local_update_n_cassettes),
+    path('local/update_ip_remote/', views.local_update_remote_ip),
+    path('local/update_path_remote/', views.local_update_remote_path),
+    path('local/update_backup_time/', views.local_update_backup_time),
     path('local/update_est_exp/<int:idExperimento>/', views.local_update_experimentos_estado),
     path('local/send_selected_pallet/<int:id_pallet>/', views.local_message_pallet_selection),
     path('local/raspon/', views.local_turn_on_rasp),
@@ -68,6 +71,9 @@ urlpatterns = [
     path('local/receive_alarm/', views.ros2_data_view),
     path('local/handle_alarm/', views.handle_alarm),
     path('local/capture_progress/', views.local_capture_progress),
+    path('local/turn_off_system/', views.local_turn_off_system),
+    path('local/check_crc_status/', views.local_check_crc_state),
+    path('local/check_next_task/', views.local_check_next_task),
     
     #       ------Local Cámara------
     path('local/image_callback/', local_image_callback_1),

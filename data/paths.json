@@ -1,5 +1,6 @@
 {
-    "captura": "/home/usuario/Escritorio/ai2app-backend/dummy.py",
-    "recaptura": "/home/usuario/Escritorio/ai2app-backend/dummy.py",
-    "ros2":"cd /home/houston/ros2_ws/\nsource install/setup.bash\n"
+    "captura": "/home/houston/Escritorio/ai2app-backend/dummy.sh",
+    "recaptura": "/home/houston/Escritorio/ai2app-backend/dummy.sh",
+    "ros2":"cd /home/houston/ros2_ws/\nsource install/setup.bash\n",
+    "xml_config": "/home/houston/Escritorio/ai2app-backend/Config.xml"
 }

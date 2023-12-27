@@ -55,6 +55,7 @@ def read_json(key):
 SCRIPT_CAPTURA = read_json("captura")
 SCRIPT_RECAPTURA = read_json("recaptura")
 ROS2_COMMAND_LINE = read_json("ros")
+XML_FILE = read_json("xml_config")
 
 #           --PLANIFICADOR--
 #       ------Dispositivo------
@@ -1520,6 +1521,111 @@ def local_update_n_cassettes(request, ip):
     # Return an error response for unsupported methods
     return JsonResponse({'message': 'Method not allowed'}, status=405)
 
+import xml.etree.ElementTree as ET
+
+def restart_backup_process():
+        # Execute the commands
+        exec_command = "(ps -aux | head -n 1 | tr -s ' ' | awk -v search=PID 'BEGIN{IGNORECASE=1} {for(i=1; i<=NF; i++) if($i == search) print i}')"
+
+        process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = process.communicate(exec_command.encode('utf-8'))
+
+        pos_PID = (out.decode('utf-8'))
+
+        print(f'\nPOS PID: {pos_PID}, {err}\n')
+
+        new_exec_command = "ps -aux | grep backup | awk '{print $" + pos_PID + "}'"
+        process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = process.communicate(new_exec_command.encode('utf-8'))
+
+        aux_char = (out.decode('utf-8'))
+        print(f"Se me ha devuelto esto {aux_char}")
+        stop_string = "sudo kill -9 " + aux_char + "\n"
+        print(stop_string)
+        process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = process.communicate(stop_string.encode('utf-8'))
+
+@csrf_exempt
+def local_update_remote_ip(request):
+    if request.method == 'POST':
+        
+        # We load the XML file we want to modify
+        global XML_FILE
+        tree = ET.parse(XML_FILE)
+
+        body = json.loads(request.body)
+        newIPRemote = body.get('IPRemote', '')
+        ip_discoverability = ping_device(str(newIPRemote), 2)
+
+        print(f'\n{XML_FILE}\n{newIPRemote}\n{ip_discoverability}\n')
+
+        if ip_discoverability:
+            return HttpResponse(status=404)
+        
+        for IP in tree.iter('IPServer'):
+            print(f'writing this: {str(newIPRemote)}')
+            print()
+            IP.text = '"' + str(newIPRemote) + '"'
+
+        tree.write(XML_FILE)
+
+        restart_backup_process()
+
+        return HttpResponse(status=200)
+    
+    return HttpResponse(status=403)
+
+@csrf_exempt
+def local_update_remote_path(request):
+    if request.method == 'POST':
+        
+        # We load the XML file we want to modify
+        global XML_FILE
+        tree = ET.parse(XML_FILE)
+
+        body = json.loads(request.body)
+        newPathRemote = body.get('imgsPath', '')
+        
+        for IP in tree.iter('RAIZ'):
+            print(f'writing this: {str(newPathRemote)}')
+            print()
+            IP.text = str(newPathRemote)
+
+        tree.write(XML_FILE)
+
+        restart_backup_process()
+
+        return HttpResponse(status=200)
+    
+    return HttpResponse(status=403)
+
+@csrf_exempt
+def local_update_backup_time(request):
+    if request.method == 'POST':
+        
+        # We load the XML file we want to modify
+        global XML_FILE
+        tree = ET.parse(XML_FILE)
+
+        body = json.loads(request.body)
+        newTime = body.get('timeSet', '')
+        newTime = str(newTime) + ":00"
+
+        print(f'\n{XML_FILE}\n{newTime}\n')
+        
+        for timeProgrammed in tree.iter('horaProgramada'):
+            print(f'writing this: {str(newTime)}')
+            print()
+            timeProgrammed.text = '"' + str(newTime) + '"'
+
+        tree.write(XML_FILE)
+
+        restart_backup_process()
+
+        return HttpResponse(status=200)
+    
+    return HttpResponse(status=403)
+
 @csrf_exempt
 def local_turn_on_rasp(request):
     if request.method == 'POST':
@@ -2250,11 +2356,11 @@ def ssh_stop_display(IP):
         shell = client.invoke_shell()
 
         # Execute the commands
-        exec_command = "(ps -la | head -n 1 | tr -s ' ' | awk -v search=PID 'BEGIN{IGNORECASE=1} {for(i=1; i<=NF; i++) if($i == search) print i}')"
+        exec_command = "(ps -aux | head -n 1 | tr -s ' ' | awk -v search=PID 'BEGIN{IGNORECASE=1} {for(i=1; i<=NF; i++) if($i == search) print i}')"
         print("")
         stdin, stdout, stderr = client.exec_command(exec_command)
         pos_PID = (stdout.read().decode('utf-8'))
-        new_exec_command = "ps la | grep display | awk '{print $" + pos_PID + "}'"
+        new_exec_command = "ps -aux | grep /display_node | awk '{print $" + pos_PID + "}'"
         stdin, stdout, stderr = client.exec_command(new_exec_command)
         # print(f"Se me devuelto esto {aux_char}")
         print("\n\n\nA punto de finalizar el proceso para el apagado del display\n\n\n")
@@ -2398,6 +2504,9 @@ global_sensor_msgs = {
     'palet_a': False,
     'palet_b': False,
 
+    'caset_a': 0,
+    'caset_b': 0,
+
     'palet_descolocat_1': 0,
     'palet_descolocat_2': 0,
 
@@ -2435,6 +2544,9 @@ def local_sensor_messages(request):
 
         global_sensor_msgs['palet_a'] = request.POST.get('palet_a', '')
         global_sensor_msgs['palet_b'] = request.POST.get('palet_b', '')
+
+        global_sensor_msgs['caset_a'] = request.POST.get('caset_a', '')
+        global_sensor_msgs['caset_b'] = request.POST.get('caset_b', '')
 
         global_sensor_msgs['palet_descolocat_1'] = request.POST.get('palet_descolocat_1', '')
         global_sensor_msgs['palet_descolocat_2'] = request.POST.get('palet_descolocat_2', '')
@@ -2502,6 +2614,9 @@ def local_sensor_messages(request):
             'palet_a': global_sensor_msgs['palet_a'],
             'palet_b': global_sensor_msgs['palet_b'],
 
+            'caset_a': global_sensor_msgs['caset_a'],
+            'caset_b': global_sensor_msgs['caset_b'],
+
             'palet_descolocat_1': global_sensor_msgs['palet_descolocat_1'],
             'palet_descolocat_2': global_sensor_msgs['palet_descolocat_2'],
 
@@ -2551,36 +2666,36 @@ def local_update_experimentos_estado(request, idExperimento):
 
 #           --LOCAL WEBSOCKETS--
 
-from channels.generic.websocket import AsyncWebsocketConsumer
+# from channels.generic.websocket import AsyncWebsocketConsumer
 
-class AlarmConsumer(AsyncWebsocketConsumer):
-    async def connect(self):
-        # Add the connected WebSocket client to a group
-        await self.channel_layer.group_add("alarms", self.channel_name)
-        await self.accept()
+# class AlarmConsumer(AsyncWebsocketConsumer):
+#     async def connect(self):
+#         # Add the connected WebSocket client to a group
+#         await self.channel_layer.group_add("alarms", self.channel_name)
+#         await self.accept()
 
-    async def disconnect(self, close_code):
-        # Remove the WebSocket client from the group
-        await self.channel_layer.group_discard("alarms", self.channel_name)
+#     async def disconnect(self, close_code):
+#         # Remove the WebSocket client from the group
+#         await self.channel_layer.group_discard("alarms", self.channel_name)
 
-    async def receive(self, content):
-        print(content)
-        # Handle incoming JSON messages (if needed)
-        pass
+#     async def receive(self, content):
+#         print(content)
+#         # Handle incoming JSON messages (if needed)
+#         pass
 
-    async def send(self, event):
-        # Send the alarm message to the WebSocket client
-        alarm_message = event['message']
-        await self.send_json({'message': alarm_message})
+#     async def send(self, event):
+#         # Send the alarm message to the WebSocket client
+#         alarm_message = event['message']
+#         await self.send_json({'message': alarm_message})
 
 # myapp/views.py
 
-from channels.layers import get_channel_layer
+# from channels.layers import get_channel_layer
 from django.http import HttpResponse
 from rest_framework.decorators import api_view
 from asgiref.sync import async_to_sync
 
-channel_layer = get_channel_layer()
+# channel_layer = get_channel_layer()
 
 @api_view(['POST'])
 def trigger_alarm(request):
@@ -2720,9 +2835,10 @@ class ContainerAlarm:
                     auxPattern = re.search("Tarea", alarm.message, re.I)
                     tempPattern = re.search("Temperatura", alarm.message, re.I)
                     humPattern = re.search("Humedad", alarm.message, re.I)
-                    if ((not auxPattern) and (not tempPattern) and (not humPattern)) or (int(alarm.id) >= 0):
-                        return_alarm_ros2(alarm)
-                        print("returning")
+                    if ((not auxPattern) and (not tempPattern) and (not humPattern)):
+                        if (int(alarm.id) >=0):
+                            return_alarm_ros2(alarm)
+                            print("returning")
                     self.condition.notify_all()
                     return alarm
             return None
@@ -2854,7 +2970,7 @@ def local_capture_progress(request):
             last_task = tar.order_by('-fechayHora')[:1]
             #serialized_data = serialize('json', last_task)
             #return JsonResponse(serialized_data, safe=False)
-            print(last_task[0].fechayHora)
+            # print(last_task[0].fechayHora)
 
             if "lanzada" in last_task[0].estado:
                 state = (last_task[0].estado).split("-")
@@ -2866,3 +2982,163 @@ def local_capture_progress(request):
             #return JsonResponse(serialized_data, safe=False)
 
         return JsonResponse({'is_capturing': False, 'percentage': "0%"})
+
+def ping_device(ip, ip_iterations):
+    counter = 0
+    while (counter <= ip_iterations):
+        result = subprocess.run(['ping', '-c', '1', ip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if result.returncode != 0:
+            print(f"Device {ip} is unreachable!")
+            return True
+        else:
+            print(f"Pinging {ip}...")
+            print(result.returncode)
+            counter += 1
+            time.sleep(2)
+
+    return False
+
+def is_process_running(process_name):
+    try:
+        # Run the ps and grep command in a single line
+        command = f"ps -aux | grep {process_name}"
+        # process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+
+        # Get the output of the process
+        # output, _ = process.communicate()
+        process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        out, err = process.communicate(command.encode('utf-8'))
+        auxOutput = out.decode('utf-8')
+        print(auxOutput)
+        program_name = process_name + ".py"  # We create the program's script name
+        lines_with_name = [line for line in auxOutput.splitlines() if program_name in line]
+        # print(f'Lines with name: {len(lines_with_name)}')
+        if len(lines_with_name) < 1:  # We check wether there are tasks running
+            return False
+        else:
+            return True
+    except Exception as e:
+        print(f"Error checking process: {e}")
+        return False
+    
+@csrf_exempt
+def local_turn_off_system(request):
+
+    if request.method == 'POST':
+
+        # We first check whether there are any tasks being actually captured
+
+        process_name = "Control_Robot_Captura"  # Set to the name of the python script that will run
+        run_flag = is_process_running(process_name)
+        
+        while run_flag:
+            a = 3
+            print(f'{a}')
+            time.sleep(random.randint(1, 4))  # We add a random wait
+            run_flag = is_process_running(process_name)  # We check if there are no longer any other processes
+
+        # We then turn off the display of the Raspberry containing it and then we turn off said Raspberry
+                
+        IP1 = "192.168.11.11"
+        IP2 = "192.168.12.12"
+
+        if not ping_device(IP1, 10):
+
+            # url = 'http://127.0.0.1:8000/local/raspreboot/'
+            url = 'http://127.0.0.1:8000/local/raspoff/'
+
+            payload = {'auxRasP': str(IP1)}
+            body = json.dumps(payload)
+
+            ssh_stop_display(IP1)
+            time.sleep(5)
+            requests.post(url, data=body)
+
+        print("\nAfter Raspberry turn off\n")
+
+        # Afterwards, we send a service petition to turn off towerRobot's Raspberry
+        
+        global ROS2_COMMAND_LINE
+
+        ros2_command = ROS2_COMMAND_LINE + "ros2 run pc_services client apagado --ros-args -p topic_service:='stop'"
+        timeout = 60  # Timeout of 1 minute (in seconds)
+        
+        try:
+            # Run the command and capture output
+            process = subprocess.Popen(
+                ros2_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+                executable='/bin/bash'
+            )
+            stdout, stderr = process.communicate(timeout=timeout)
+            decoded_output = stdout.decode('utf-8')
+            error_decoded = stderr.decode('utf-8')
+
+            print(decoded_output)
+
+
+        except subprocess.TimeoutExpired:
+            #print("Timeout occurred! Exiting...")
+            # publish_alarm_ros2("La tarea actual no se puede ejecutar, comprueba las alarmas del sistema y, si lo desea, replanifíquela.", command_work_space, (-6))
+            print("No connetion to towerRobot")
+
+        reachIP1 = ping_device(IP1, 10)
+        reachIP2 = ping_device(IP2, 10)
+
+        if (reachIP1 and reachIP2):
+
+            time.sleep(5)
+
+            # UNCOMEMENT AFTER
+
+            shutdown_command = "sudo shutdown -h now"
+            process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            err, out = process.communicate(shutdown_command.encode('utf-8'))
+
+            output_str = out.decode('utf-8')
+
+            print(f'\n{output_str}\n')
+        
+
+        # Send SSE event to connected clients
+        # send_event('ros2_events', 'message', str(data))
+        return HttpResponse(status=404)
+    
+def local_check_crc_state(request):
+    if request.method == 'GET':
+        process_name = "Control_Robot_Captura"  # Set to the name of the python script that will run
+        run_flag = is_process_running(process_name)
+
+        if run_flag:
+            data = {
+                'state': True,
+            }
+        else: 
+            data = {
+                'state': False,
+            }
+
+        return JsonResponse(data)
+    
+def local_check_next_task(request):
+    if request.method == 'GET':
+        tar = Tareas.objects.filter(fechayHora__gt=timezone.now())
+
+        if tar.exists():
+
+            #last_task = tar.order_by('-fechayHora')[:1]
+            last_task = tar.order_by('-fechayHora')[0:]
+            length_tasks = last_task.count()
+            print(last_task, length_tasks)
+            #serialized_data = serialize('json', last_task)
+            #return JsonResponse(serialized_data, safe=False)
+            # print(last_task[0].fechayHora)
+
+
+            fecha = str(last_task[length_tasks - 1].fechayHora)
+            return JsonResponse({'dato': 1, 'fecha': fecha})
+
+
+        return JsonResponse({'dato': 0, 'fecha': "1970-05-01 00:00:00.000000"})
