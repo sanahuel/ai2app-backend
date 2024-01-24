@@ -2,7 +2,7 @@ from django.urls import path
 from . import views
 from django.views.decorators.csrf import csrf_exempt
 from .views import NewView, ControlView, ControlExpView, ResultView, ResultExpView, DispositivoView, DispositivoTareasView
-from .views import DispConfig, PlacasConfig, PlanifConfig, DispIndividual, PlanifIndividual, PlacasIndividual, IPsConfig, IPsIndividual
+from .views import DispConfig, PlacasConfig, PlanifConfig, DispIndividual, PlanifIndividual, PlacasIndividual, IPsConfig, IPsIndividual, DistrConfig
 # Local
 from .views import LocalPalletsView, LocalPlacasView, LocalPlacasDetailView, LocalPalletPlacasView, LocalPalletsByAlmacenView, LocalAlmacenesView, LocalCListView, LocalPListView, LocalDispositivosView, LocalExperimentosView, LocalDistrPallet
 from .views import local_image_callback_1, local_image_view_1, local_image_callback_2, local_image_view_2
@@ -25,6 +25,7 @@ urlpatterns = [
     path('config/planif/<int:pk>', PlanifIndividual.as_view()),
     path('config/ips', IPsConfig.as_view()),
     path('config/ips/<int:pk>', IPsIndividual.as_view()),
+    path('config/distr', DistrConfig.as_view()),
 
     #       ------Local------
     path('local/dispositivos/', LocalDispositivosView.as_view()),

@@ -210,6 +210,11 @@ class NewView(APIView):
         ### CHANGES
         changes = json_data['changes']
 
+        ### CHECK NAME
+        otros_ensayos = Experimentos.objects.filter(nombreExperimento=nombreExperimento).values_list('idExperimentos', flat=True)
+        if len(otros_ensayos) > 0:
+            return JsonResponse({'status': 400, 'message': 'Ya existe un ensayo con ese nombre'})
+
         with transaction.atomic():
             ### Experimento
             experimento = Experimentos.objects.create(
@@ -248,6 +253,7 @@ class NewView(APIView):
                 ## Tareas Operativo
                 command = f'TZ={TIME_ZONE} ' + "at {:02d}:{:02d} {:02d} {} {} -f "+ SCRIPT_CAPTURA +" 2>&1 | awk 'END{{print $2}}'"
                 command = command.format(h, m, dia, meses[mes-1], str(año))
+                print(command )
                 output = subprocess.check_output(command, shell=True).decode().strip()
 
                 tarea = Tareas.objects.create(
@@ -269,6 +275,7 @@ class NewView(APIView):
                 pallets = Pallets.objects.create(
                     idDispositivos=dispositivo,
                     localizacion=pallet,
+                    idExperimentos=experimento,
                 )
                 palletsBBDD.append(pallets)
             
@@ -433,8 +440,8 @@ class ControlExpView(View):
                 events.append({
                 'title': nombreExperimento,
                 'start': t[0],
-                'end': start_date + timedelta(minutes=minutes_to_add),
-                'allDay': False,
+                # 'end': start_date + timedelta(minutes=minutes_to_add),
+                'allDay': True,
                 'color': '#ddd',
                 'editable': False,
                 'id': id,
@@ -446,6 +453,8 @@ class ControlExpView(View):
                 'end': start_date + timedelta(minutes=minutes_to_add),
                 'allDay': False,
                 'color': color,
+                'editable': True,
+                'durationEditable': False,
                 'id': id,
             })
             id+=1
@@ -793,6 +802,19 @@ class ResultExpView(View):
 
 import json
 
+class DistrConfig(APIView):
+    def get(self, request, *args, **kwargs):
+        with open('./data/distribucion.json', 'r') as f:
+            data = json.load(f)
+            return JsonResponse(data)
+    
+    def put(self, request, *args, **kwargs):
+        body_unicode = request.body.decode('utf-8')
+        data = json.loads(body_unicode)
+        with open('./data/distribucion.json', 'w') as f:
+            f.write(json.dumps(data))
+            return JsonResponse({'message':1})
+
 class DispConfig(APIView):
     # permission_classes = [IsAuthenticated]
 
@@ -808,25 +830,34 @@ class DispConfig(APIView):
         with open('./data/dispositivos.json', 'r') as f:
             existing_data = json.load(f)
             dispositivos = existing_data.get('dispositivos', [])
-        nDisp_values = [device['nDisp'] for device in dispositivos]
+
+        nDisp_values = [device['nDis'] for device in dispositivos]
+        max_nDisp = max(nDisp_values)
+        print(max_nDisp)
+        data['nDis'] = max_nDisp + 1
+
         IP_values = [device['IP'] for device in dispositivos]
-        if data['nDisp'] not in nDisp_values:
+        Nombre_values = [device['Nombre'] for device in dispositivos]
+        if data['nDis'] not in nDisp_values:
             if data['IP'] not in IP_values:
-                dispositivos.append(data)
-                with open('./data/dispositivos.json', 'w') as f:
-                    f.write(json.dumps({"dispositivos": dispositivos}))
-                    return JsonResponse({'message':1})
+                if data['Nombre'] not in Nombre_values:
+                    dispositivos.append(data)
+                    with open('./data/dispositivos.json', 'w') as f:
+                        f.write(json.dumps({"dispositivos": dispositivos}))
+                        return JsonResponse({'message':1})
+                else:
+                    return JsonResponse({'error': 'Nombre'})
             else:
                 return JsonResponse({'error': 'IP'})
         else:
-            return JsonResponse({'error': 'nDisp'})
+            return JsonResponse({'error': 'nDis'})
         
 class DispIndividual(APIView):
     def get(self, request, *args, **kwargs):
         with open('./data/dispositivos.json', 'r') as f:
             data = json.load(f)
         for device in data['dispositivos']:
-            if int(device['nDisp']) == int(self.kwargs['pk']):
+            if (device['nDis']) == int(self.kwargs['pk']):
                 return JsonResponse(device)
         return JsonResponse({'error': 'Error: Entry not found.'})
     
@@ -838,14 +869,17 @@ class DispIndividual(APIView):
         with open('./data/dispositivos.json', 'r') as f:
             data = json.load(f)
         
-        nDisp_values = [int(device['nDisp']) for device in data['dispositivos']]
-
-        if (int(body['nDisp']) in nDisp_values) and (int(body['nDisp']) != int(self.kwargs['pk'])):
-            return JsonResponse({'error': 'nDisp'})
-        
         dispositivos = data['dispositivos']
+        nDisp_values = [int(device['nDis']) for device in data['dispositivos']]
+
+        if (body['nDis'] in nDisp_values) and (int(body['nDis']) != int(self.kwargs['pk'])):
+            return JsonResponse({'error': 'nDisp'})
+
         for device in dispositivos:
-            if int(device['nDisp']) == int(self.kwargs['pk']):
+            if device['Nombre'] == body['Nombre'] and device['nDis'] != int(self.kwargs['pk']):
+                return JsonResponse({'error': 'Nombre'})
+
+            if int(device['nDis']) == int(self.kwargs['pk']):
                 new_dispositivos.append(body)
             else:
                 new_dispositivos.append(device)

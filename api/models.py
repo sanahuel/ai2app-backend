@@ -56,6 +56,7 @@ class Pallets(models.Model):
     idPallets = models.AutoField(primary_key=True)
     idDispositivos = models.ForeignKey(Dispositivos,on_delete=models.CASCADE)
     localizacion = models.CharField(max_length=45)
+    idExperimentos = models.ForeignKey(Experimentos, on_delete=models.CASCADE)
 
 class Placas(models.Model):
     idPlacas =  models.AutoField(primary_key=True)
