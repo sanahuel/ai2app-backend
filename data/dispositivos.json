@@ -1,1 +1,10 @@
-{"dispositivos": [{"IP": "127.0.0.1", "Dis": "miniTower", "Nombre": "miniTower 001", "nDis": 1}]}
+{
+  "dispositivos": [
+    {
+      "IP": "127.0.0.1",
+      "Dis": "miniTower",
+      "Nombre": "miniTower 001",
+      "nDis": 1
+    }
+  ]
+}
