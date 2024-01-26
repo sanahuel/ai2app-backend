@@ -378,6 +378,12 @@ class ControlExpView(View):
         aplicacion = experimento.aplicacion
         nombreProyecto = experimento.nombreProyecto
         color = experimento.color
+        temperatura = experimento.temperatura.split('-')
+        humedad = experimento.humedad.split('-')
+        temperaturaMin = temperatura[0]
+        temperaturaMax = temperatura[1]
+        humedadMin = humedad[0]
+        humedadMax = humedad[1]
         
         tareas_totales = Tareas.objects.filter(idExperimentos= self.kwargs['pk'])
         placas_totales = Placas.objects.filter(idExperimentos= self.kwargs['pk'])
@@ -520,6 +526,10 @@ class ControlExpView(View):
             'color': color,
             'resultados': resultados,
             'show': show_resultados,
+            'temperaturaMin': temperaturaMin,
+            'temperaturaMax': temperaturaMax,
+            'humedadMin': humedadMin,
+            'humedadMax': humedadMax,
         }
         
         return JsonResponse(data)
@@ -657,6 +667,25 @@ class ControlExpView(View):
                     idOperativo=idOperativo,
                     duracion=duracion,
                 )
+        
+        elif table == 'Temperatura':
+            with transaction.atomic():
+                temperatura = json_data['temperatura']
+                experimento = Experimentos.objects.get(idExperimentos=self.kwargs['pk'])
+                experimento.temperatura = temperatura
+                
+                experimento.save()
+                return JsonResponse({'message': 'Temperatura editada'})
+        
+        elif table == 'Humedad':
+            with transaction.atomic():
+                humedad = json_data['humedad']
+                experimento = Experimentos.objects.get(idExperimentos=self.kwargs['pk'])
+                experimento.humedad = humedad
+
+                experimento.save()
+                return JsonResponse({'message': 'Temperatura editada'})
+
 
         return JsonResponse({'message': 'table not found'})
 
