@@ -56,6 +56,8 @@ SCRIPT_CAPTURA = read_json("captura")
 SCRIPT_RECAPTURA = read_json("recaptura")
 ROS2_COMMAND_LINE = read_json("ros")
 XML_FILE = read_json("xml_config")
+CONFIG_SRVR = read_json("config_srvr")
+BACKUP_SCRIPT = read_json("backup_script")
 
 #           --PLANIFICADOR--
 #       ------Dispositivo------
@@ -1610,55 +1612,144 @@ def restart_backup_process():
 
 @csrf_exempt
 def local_update_remote_ip(request):
+
+    global XML_FILE
+    global CONFIG_SRVR
+    
     if request.method == 'POST':
         
         # We load the XML file we want to modify
-        global XML_FILE
+        # global XML_FILE
         tree = ET.parse(XML_FILE)
 
         body = json.loads(request.body)
         newIPRemote = body.get('IPRemote', '')
+        remoteUserLoaded = body.get('remoteUser', '')
+        remotePassword = body.get('remotePassword', '')
+        systemUser = body.get('user', '')
+        systemPassword = body.get('password', '')
+        remotePath = body.get('imgsPath', '')
         ip_discoverability = ping_device(str(newIPRemote), 2)
 
-        print(f'\n{XML_FILE}\n{newIPRemote}\n{ip_discoverability}\n')
+        print(f'\n\n\n\n\n\n{remotePath}\n\n\n\n\n\n')
 
         if ip_discoverability:
             return HttpResponse(status=404)
         
         for IP in tree.iter('IPServer'):
-            print(f'writing this: {str(newIPRemote)}')
-            print()
             IP.text = '"' + str(newIPRemote) + '"'
 
         tree.write(XML_FILE)
 
-        restart_backup_process()
+        # command = f'echo {systemPassword} | sudo -S -u {systemUser} ./configura_servidor.sh --rs "{remote_path}" --ip "{newIPRemote}" -u "{remoteUserLoaded}" -p "{remotePassword}"'
+        new_command = f'echo {systemPassword} | sudo -S bash {CONFIG_SRVR} --rs "{remotePath}" --ip "{newIPRemote}" -u "{remoteUserLoaded}" -p "{remotePassword}"'
+
+        # Create a client object
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        try:
+            # Connect to the raspberry
+            client.connect('localhost', username=systemUser, password=systemPassword)
+            time.sleep(2)
+
+            # Execute the commands
+            # Start a single shell session and run multiple commands
+            shell = client.invoke_shell()
+            # new_command = "date"
+            # Execute the commands
+            stdin, stdout, stderr = client.exec_command(new_command)
+            subpOutput = stdout.read().decode('utf-8').strip()
+            subError = stderr.read().decode('utf-8').strip()
+            print(f'\n\n\nCommand: {new_command}\n\n\n')
+            print(f'\n\n\nOutput: {subpOutput}\n\n\n')
+            print(f'\n\n\nError: {subError}\n\n\n')
+
+        except paramiko.SSHException as e:
+            print(f"SSH Exception: {e}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            client.close()
+
+        # restart_backup_process()
 
         return HttpResponse(status=200)
+    
+    elif request.method == 'GET':
+        # We load the XML file we want to modify
+        # global XML_FILE
+        tree = ET.parse(XML_FILE)
+        ip_remota = tree.find('IPServer').text
+        # ip_remota = '12.12.12.12'
+        return JsonResponse({'message': str(ip_remota)}, status=200)
     
     return HttpResponse(status=403)
 
 @csrf_exempt
 def local_update_remote_path(request):
+
+    global XML_FILE
+
     if request.method == 'POST':
         
         # We load the XML file we want to modify
-        global XML_FILE
         tree = ET.parse(XML_FILE)
 
         body = json.loads(request.body)
         newPathRemote = body.get('imgsPath', '')
+        remoteUserLoaded = body.get('remoteUser', '')
+        remotePassword = body.get('remotePassword', '')
+        systemUser = body.get('user', '')
+        systemPassword = body.get('password', '')    
+
+        print(f'\n\n\n\n\n\n\n\n\n{newPathRemote}\n\n\n\n\n\n\n\n\n')    
         
         for IP in tree.iter('RAIZ'):
-            print(f'writing this: {str(newPathRemote)}')
-            print()
             IP.text = str(newPathRemote)
 
         tree.write(XML_FILE)
 
-        restart_backup_process()
+        newIPRemote = tree.find('IPServer').text
+
+        new_command = f'echo {systemPassword} | sudo -S bash /home/multiview001/Desktop/ai2app-backend/configura_servidor.sh --rs "{newPathRemote}" --ip "{newIPRemote}" -u "{remoteUserLoaded}" -p "{remotePassword}"'
+
+        # Create a client object
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        try:
+            # Connect to the raspberry
+            client.connect('localhost', username=systemUser, password=systemPassword)
+            time.sleep(2)
+
+            # Execute the commands
+            # Start a single shell session and run multiple commands
+            shell = client.invoke_shell()
+
+            # Execute the commands
+            stdin, stdout, stderr = client.exec_command(new_command)
+            subpOutput = stdout.read().decode('utf-8').strip()
+            subError = stderr.read().decode('utf-8').strip()
+            print(f'\n\n\n\n\n\n\n\n\n\n\n\nCommand: {new_command}\n\n\n\n\n\n\n\n\n\n\n\n')
+            print(f'\n\n\n\n\n\n\n\n\n\n\n\nOutput: {subpOutput ,subError}\n\n\n\n\n\n\n\n\n\n\n\n')
+
+        except paramiko.SSHException as e:
+            print(f"SSH Exception: {e}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            client.close()
+
+        # restart_backup_process()
 
         return HttpResponse(status=200)
+    
+    elif request.method == 'GET':
+        # We load the XML file we want to modify
+        tree = ET.parse(XML_FILE)
+        path_remoto = tree.find('RAIZ').text
+        return JsonResponse({'message': str(path_remoto)}, status=200)
     
     return HttpResponse(status=403)
 
@@ -2694,6 +2785,8 @@ def local_sensor_messages(request):
 
 @csrf_exempt
 def local_update_experimentos_estado(request, idExperimento):
+
+    global BACKUP_SCRIPT
     if request.method == 'POST':
         # Retrieve the instance of the model
         instance = get_object_or_404(Experimentos, idExperimentos=idExperimento)
@@ -2706,15 +2799,43 @@ def local_update_experimentos_estado(request, idExperimento):
         instance.estado = nEstado
 
         if (nEstado == 'descargado'):
+            try:
+                path_experiment = tree.read("RAIZTEMPORAL")
+                running_command = "." + BACKUP_SCRIPT + " " + path_experiment
+                process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                out, err = process.communicate(running_command.encode('utf-8'))
+                Resp = out.decode('utf-8')
+
+                LinesResp = Resp.splitlines()
+
+                for line in LinesResp:
+                    if "error" in line:
+                        line.split(": ")
+                        # if line[1] and line[1] == "0":
+                        #     break
+
+                        if line[1] and line[1] == "1":
+                            return JsonResponse({'message': 'Method not allowed'}, status=405)
+
+                        else:
+                            return JsonResponse({'message': 'Method not allowed'}, status=405)
+
+
+                            
+            except Exception as e:
+                return JsonResponse({'message': 'nEstado updated successfully'})
+            
             placas = Placas.objects.filter(idExperimentos = idExperimento)
-            id_pallets = list(placas.values_list('idPallets', flat=True).distinct())
+            # id_pallets = list(placas.values_list('idPallets', flat=True).distinct())
+            pallets = Pallets.objects.filter(idExperimentos = idExperimento)
             Placas.objects.filter(idExperimentos = idExperimento).update(idPallets=None)
             # print(id_pallets)
-            pallets_list = []
-            for idPal in id_pallets:
-                pallets = Pallets.objects.filter(idPallets = idPal)
-                pallets_list.append(pallets)
-                Pallets.objects.filter(idPallets = idPal).delete()
+            pallets.delete()
+            # pallets_list = []
+            # for idPal in id_pallets:
+            #     pallets = Pallets.objects.filter(idPallets = idPal)
+            #     pallets_list.append(pallets)
+            #     Pallets.objects.filter(idPallets = idPal).delete()
 
             # print(pallets_list[0])
 
