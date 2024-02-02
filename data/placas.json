@@ -1,1 +1,1 @@
-{"placas": [{"nombre": "Pallet 2 Placas", "numCondiciones": "2", "filas": "1", "columnas": "2", "condiciones": {"1": ["0,0"], "2": ["0,1"]}, "id": 4}, {"nombre": "Pallet 1 Placa", "numCondiciones": "1", "filas": "1", "columnas": "2", "condiciones": {"1": ["0,0", "0,1"]}, "id": 6}]}
+{"placas": [{"nombre": "Pallet 1 Condicion", "numCondiciones": "1", "filas": "1", "columnas": "2", "condiciones": {"1": ["0,0", "0,1"]}, "id": 6}, {"nombre": "Pallet 2 Condiciones", "numCondiciones": "2", "filas": "1", "columnas": "2", "condiciones": {"1": ["0,0"], "2": ["0,1"]}, "id": 4}]}

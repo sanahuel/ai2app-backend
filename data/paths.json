@@ -1,6 +1,6 @@
 {
-  "captura": "/home/multiview001/Desktop/ai2app-backend/dummy.py",
-  "recaptura": "/home/multiview001/Desktop/ai2app-backend/dummy.py",
+  "captura": "/home/usuario/Desktop/ai2app-backend/dummy.py",
+  "recaptura": "/home/usuario/Desktop/ai2app-backend/dummy.py",
   "ros2": "cd /home/multiview001/ros2_ws/\nsource install/setup.bash\n",
   "xml_config": "/home/multiview001/Desktop/Config.xml",
   "config_srvr": "/home/multiview001/Desktop/configura_servidor.sh",

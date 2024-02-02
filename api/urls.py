@@ -2,13 +2,14 @@ from django.urls import path
 from . import views
 from django.views.decorators.csrf import csrf_exempt
 from .views import NewView, ControlView, ControlExpView, ResultView, ResultExpView, DispositivoView, DispositivoTareasView
-from .views import DispConfig, PlacasConfig, PlanifConfig, DispIndividual, PlanifIndividual, PlacasIndividual, IPsConfig, IPsIndividual, DistrConfig
+from .views import IPConfirmation, DispConfig, PlacasConfig, PlanifConfig, DispIndividual, PlanifIndividual, PlacasIndividual, IPsConfig, IPsIndividual, DistrConfig
 # Local
 from .views import LocalPalletsView, LocalPlacasView, LocalPlacasDetailView, LocalPalletPlacasView, LocalPalletsByAlmacenView, LocalAlmacenesView, LocalCListView, LocalPListView, LocalDispositivosView, LocalExperimentosView, LocalDistrPallet
 from .views import local_image_callback_1, local_image_view_1, local_image_callback_2, local_image_view_2
 
 urlpatterns = [
     #       ------Planificador------
+    path('check/', IPConfirmation.as_view()),
     path('new/', NewView.as_view()),
     path('results/', ResultView.as_view()),
     path('results/<int:pk>', ResultExpView.as_view()),

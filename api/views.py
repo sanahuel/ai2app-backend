@@ -60,6 +60,12 @@ CONFIG_SRVR = read_json("config_srvr")
 BACKUP_SCRIPT = read_json("backup_script")
 
 #           --PLANIFICADOR--
+#       ------IPConfirmation------
+
+class IPConfirmation(APIView):
+    def get(self, request, *args, **Kwargs):
+        return JsonResponse({"status": True})
+
 #       ------Dispositivo------
 
 class DispositivoView(APIView):
@@ -255,9 +261,8 @@ class NewView(APIView):
                 ## Tareas Operativo
                 command = f'TZ={TIME_ZONE} ' + "at {:02d}:{:02d} {:02d} {} {} -f "+ SCRIPT_CAPTURA +" 2>&1 | awk 'END{{print $2}}'"
                 command = command.format(h, m, dia, meses[mes-1], str(año))
-                print(command )
+                print(command) 
                 output = subprocess.check_output(command, shell=True).decode().strip()
-
                 tarea = Tareas.objects.create(
                     idDispositivos = dispositivo,
                     fechayHora=str(datetime.datetime(year=año,month=mes,day=dia,hour=h,minute=m)), ###h+2 TODO cambiar...zona horaria
@@ -490,21 +495,38 @@ class ControlExpView(View):
             filtered_tareas = Tareas.objects.filter(idExperimentos=self.kwargs['pk'], fechayHora__lt=current_datetime).order_by('fechayHora')
 
 
-            for cond, condid in condiciones:
-                placasCond = Placas.objects.filter(idCondiciones=condid, cancelada=0).values_list('idPlacas', flat=True)
-                if len(placasCond) > 0:
-                    resultados[cond] = {}
-                    for p_id in placasCond:
-                        resultados[cond][p_id] = []
-                        for tarea in filtered_tareas:
+            # for cond, condid in condiciones:
+            #     placasCond = Placas.objects.filter(idCondiciones=condid, cancelada=0).values_list('idPlacas', flat=True)
+            #     if len(placasCond) > 0:
+            #         resultados[cond] = {}
+            #         for p_id in placasCond:
+            #             resultados[cond][p_id] = []
+            #             for tarea in filtered_tareas:
                             
-                            if tarea.cancelada == 1:
-                                pass
-                            elif tarea.estado == 'pendiente':
-                                pass 
-                            else:
-                                result = list(Resultados_healthspan.objects.filter(idPlacas=p_id, idTareas=tarea.idTareas).values_list('modo', flat=True))
-                                resultados[cond][p_id].append(result[0] if result else None)
+            #                 if tarea.cancelada == 1:
+            #                     pass
+            #                 elif tarea.estado == 'pendiente':
+            #                     pass 
+            #                 else:
+            #                     result = list(Resultados_healthspan.objects.filter(idPlacas=p_id, idTareas=tarea.idTareas).values_list('modo', flat=True))
+            #                     resultados[cond][p_id].append(result[0] if result else None)
+            for condicion in condiciones:
+                placasCond = Placas.objects.filter(idCondiciones=condicion.idCondiciones, cancelada=0).values_list('idPlacas', flat=True)
+                if len(placasCond) > 0:
+                    resultados[condicion.nombreCondicion] = {}
+                    for p_id in placasCond:
+                        resultados[condicion.nombreCondicion][p_id] = []
+
+                        results_query = Resultados_healthspan.objects.filter(idPlacas=p_id, idTareas__in=filtered_tareas).values_list('idTareas', 'modo')
+
+                        results_by_task = {}
+                        for result in results_query:
+                            task_id, modo = result
+                            results_by_task.setdefault(task_id, []).append(modo)
+
+                        for tarea in filtered_tareas:
+                            results_for_task = results_by_task.get(tarea.idTareas, [])
+                            resultados[condicion.nombreCondicion][p_id].append(results_for_task[0] if results_for_task else None)
 
         elif experimento.aplicacion == 'lifespan':
             pass
@@ -771,8 +793,8 @@ class ResultExpView(View):
         nombre = experimento.nombreExperimento
         aplicacion = experimento.aplicacion
         proyecto = experimento.nombreProyecto
-        idcondiciones = Condiciones.objects.filter(idExperimentos=self.kwargs['pk']).values_list('idCondiciones', flat=True)
-        tareas = Tareas.objects.filter(idExperimentos=self.kwargs['pk'])
+        # idcondiciones = Condiciones.objects.filter(idExperimentos=self.kwargs['pk']).values_list('idCondiciones', flat=True)
+        filtered_tareas = Tareas.objects.filter(idExperimentos=self.kwargs['pk']).order_by('fechayHora')
 
         # APLICACION = LIFESPAN TODO
         if aplicacion == 'lifespan':
@@ -780,51 +802,49 @@ class ResultExpView(View):
 
         # APLICACION = HEALTHSPAN
         if aplicacion == 'healthspan':
-            condiciones = {}
             placas = {}
-            for idCondicion in idcondiciones:
-                idplacas = Placas.objects.filter(idCondiciones=idCondicion).values_list('idPlacas', flat=True)
-                condiciones[Condiciones.objects.get(idCondiciones=idCondicion).nombreCondicion] = idplacas
+            condiciones = Condiciones.objects.filter(idExperimentos=self.kwargs['pk'])
+            condiciones_placas = {}
 
-            for idPlaca in idplacas:
-                placas[idPlaca] = {}
-
-            condiciones = Condiciones.objects.filter(idExperimentos= self.kwargs['pk']).values_list('nombreCondicion', 'idCondiciones')
-            filtered_tareas = Tareas.objects.filter(idExperimentos=self.kwargs['pk']).order_by('fechayHora')
+            for condicion in condiciones:
+                placas_condicion = Placas.objects.filter(idCondiciones=condicion.idCondiciones, cancelada=0).values_list('idPlacas', flat=True)
+                condiciones_placas[condicion.nombreCondicion] = list(placas_condicion)
 
             cantidadMov = {}
+            for condicion in condiciones:
+                if len(condiciones_placas[condicion.nombreCondicion]) > 0:
+                    cantidadMov[condicion.nombreCondicion] = {}
+                    for idPlacas in condiciones_placas[condicion.nombreCondicion]:
+                        placas[idPlacas] = {}
+                        cantidadMov[condicion.nombreCondicion][idPlacas] = []
 
-            for cond, condid in condiciones:
-                placasCond = Placas.objects.filter(idCondiciones=condid, cancelada=0).values_list('idPlacas', flat=True)
-                if len(placasCond) > 0:
-                    cantidadMov[cond] = {}
-                    for p_id in placasCond:
-                        cantidadMov[cond][p_id] = []
+                        # Fetch all results for the current plate and tasks
+                        results_query = Resultados_healthspan.objects.filter(idPlacas=idPlacas, idTareas__in=filtered_tareas).values_list('idTareas', 'modo')
+
+                        # Organize results by task
+                        results_by_task = {}
+                        for result in results_query:
+                            task_id, modo = result
+                            results_by_task.setdefault(task_id, []).append(modo)
+
+                        # Populate cantidadMov with results
                         for tarea in filtered_tareas:
-                            
-                            if tarea.cancelada == True:
-                                pass
-                            elif tarea.estado == 'pendiente':
-                                pass 
-                            else:
-                                result = list(Resultados_healthspan.objects.filter(idPlacas=p_id, idTareas=tarea.idTareas).values_list('modo', flat=True))
-                                cantidadMov[cond][p_id].append(result[0] if result else None)
-            
+                            results_for_task = results_by_task.get(tarea.idTareas, [])
+                            cantidadMov[condicion.nombreCondicion][idPlacas].append(results_for_task[0] if results_for_task else None)
+
             resultados = {}
             resultados['cantidadMov'] = cantidadMov
-
 
             data = {
                 'aplicacion': aplicacion,
                 'ensayo': nombre,
                 'proyecto': proyecto,
-                'nCapturas': len(tareas),
-                'inicio': tareas[0].fechayHora.strftime("%d/%m/%Y"),
-                'condiciones': list(condiciones), 
+                'nCapturas': len(filtered_tareas),
+                'inicio': filtered_tareas[0].fechayHora.strftime("%d/%m/%Y"),
+                'condiciones': list(condiciones_placas), 
                 'placas': list(placas), 
                 'resultados': resultados
             }
-
             return  JsonResponse(data)
 
         return JsonResponse({'message':1})
@@ -2799,31 +2819,31 @@ def local_update_experimentos_estado(request, idExperimento):
         instance.estado = nEstado
 
         if (nEstado == 'descargado'):
-            try:
-                path_experiment = tree.read("RAIZTEMPORAL")
-                running_command = "." + BACKUP_SCRIPT + " " + path_experiment
-                process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-                out, err = process.communicate(running_command.encode('utf-8'))
-                Resp = out.decode('utf-8')
+            # try:
+            #     path_experiment = tree.read("RAIZTEMPORAL")
+            #     running_command = "." + BACKUP_SCRIPT + " " + path_experiment
+            #     process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            #     out, err = process.communicate(running_command.encode('utf-8'))
+            #     Resp = out.decode('utf-8')
 
-                LinesResp = Resp.splitlines()
+            #     LinesResp = Resp.splitlines()
 
-                for line in LinesResp:
-                    if "error" in line:
-                        line.split(": ")
-                        # if line[1] and line[1] == "0":
-                        #     break
+            #     for line in LinesResp:
+            #         if "error" in line:
+            #             line.split(": ")
+            #             # if line[1] and line[1] == "0":
+            #             #     break
 
-                        if line[1] and line[1] == "1":
-                            return JsonResponse({'message': 'Method not allowed'}, status=405)
+            #             if line[1] and line[1] == "1":
+            #                 return JsonResponse({'message': 'Method not allowed'}, status=405)
 
-                        else:
-                            return JsonResponse({'message': 'Method not allowed'}, status=405)
+            #             else:
+            #                 return JsonResponse({'message': 'Method not allowed'}, status=405)
 
 
                             
-            except Exception as e:
-                return JsonResponse({'message': 'nEstado updated successfully'})
+            # except Exception as e:
+            #     return JsonResponse({'message': 'nEstado updated successfully'})
             
             placas = Placas.objects.filter(idExperimentos = idExperimento)
             # id_pallets = list(placas.values_list('idPallets', flat=True).distinct())
