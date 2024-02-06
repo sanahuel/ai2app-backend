@@ -725,7 +725,8 @@ class ControlExpView(View):
                     pass
             
             #Delete Tareas
-            Tareas.objects.filter(idExperimentos=self.kwargs['pk']).delete()
+            current_time = timezone.now() 
+            Tareas.objects.filter(idExperimentos=self.kwargs['pk'], fechayHora__gt=current_time).delete()
 
             #Change to borrada
             experimento = Experimentos.objects.get(idExperimentos=self.kwargs['pk'])
