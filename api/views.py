@@ -511,11 +511,11 @@ class ControlExpView(View):
             #                     result = list(Resultados_healthspan.objects.filter(idPlacas=p_id, idTareas=tarea.idTareas).values_list('modo', flat=True))
             #                     resultados[cond][p_id].append(result[0] if result else None)
             for condicion in condiciones:
-                placasCond = Placas.objects.filter(idCondiciones=condicion.idCondiciones, cancelada=0).values_list('idPlacas', flat=True)
+                placasCond = Placas.objects.filter(idCondiciones=condicion[1], cancelada=0).values_list('idPlacas', flat=True)
                 if len(placasCond) > 0:
-                    resultados[condicion.nombreCondicion] = {}
+                    resultados[condicion[0]] = {}
                     for p_id in placasCond:
-                        resultados[condicion.nombreCondicion][p_id] = []
+                        resultados[condicion[0]][p_id] = []
 
                         results_query = Resultados_healthspan.objects.filter(idPlacas=p_id, idTareas__in=filtered_tareas).values_list('idTareas', 'modo')
 
@@ -526,7 +526,7 @@ class ControlExpView(View):
 
                         for tarea in filtered_tareas:
                             results_for_task = results_by_task.get(tarea.idTareas, [])
-                            resultados[condicion.nombreCondicion][p_id].append(results_for_task[0] if results_for_task else None)
+                            resultados[condicion[0]][p_id].append(results_for_task[0] if results_for_task else None)
 
         elif experimento.aplicacion == 'lifespan':
             pass
